@@ -70,6 +70,33 @@ export function Dashboard() {
     return [...inward, ...outward].sort((a, b) => b.timestamp - a.timestamp);
   };
 
+  // Calculates automatic balance per unit (inward - outward) where unit exists in both.
+  // Returns array like [{ unit: 'Nos', balance: 5 }, ...] or [] if no matching units.
+  const calcAutoBalance = (
+    itemInwards: typeof inwardEntries,
+    itemOutwards: typeof outwardEntries
+  ): { unit: string; balance: number }[] => {
+    const inTotalsById: Record<number, number> = {};
+    itemInwards.forEach(e => {
+      inTotalsById[e.unitId] = (inTotalsById[e.unitId] || 0) + e.quantity;
+    });
+    const outTotalsById: Record<number, number> = {};
+    itemOutwards.forEach(e => {
+      outTotalsById[e.unitId] = (outTotalsById[e.unitId] || 0) + e.quantity;
+    });
+
+    const results: { unit: string; balance: number }[] = [];
+    // Only compute for units present in BOTH inward AND outward
+    Object.keys(inTotalsById).forEach(uidStr => {
+      const uid = Number(uidStr);
+      if (outTotalsById[uid] !== undefined) {
+        const bal = inTotalsById[uid] - outTotalsById[uid];
+        results.push({ unit: unitMap.get(uid) || String(uid), balance: bal });
+      }
+    });
+    return results;
+  };
+
   const exportToExcel = async () => {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Scrap Ledger App';
@@ -139,11 +166,19 @@ export function Dashboard() {
       const balance = balances.find(b => b.itemId === item.id);
       const balanceStr = balance ? `${balance.approxBalance} ${unitMap.get(balance.unitId)}` : '-';
 
+      // Auto-calculated balance: inward - outward (only where units match)
+      const autoBalances = calcAutoBalance(itemInwards, itemOutwards);
+      const autoBalStr = autoBalances.length > 0
+        ? autoBalances.map(b => `${b.balance} ${b.unit}`).join(' | ')
+        : '';
+
       // Clean sheet name (Excel limits to 31 chars and no special chars like [])
       const safeSheetName = item.name.replace(/[\\/?*\[\]]/g, '').substring(0, 31);
       
       // Add Row to Index
-      const row = indexSheet.addRow([sno++, item.name, categoryName, inStr || '-', outStr || '-', balanceStr]);
+      // In index: show auto-balance if available, else manual balance, else '-'
+      const indexBalStr = autoBalStr || balanceStr;
+      const row = indexSheet.addRow([sno++, item.name, categoryName, inStr || '-', outStr || '-', indexBalStr]);
       
       row.eachCell((cell, colNumber) => {
         cell.font = { name: 'Arial', size: 11, color: { argb: textColor } };
@@ -190,7 +225,8 @@ export function Dashboard() {
       // Summary Info
       itemSheet.mergeCells('A3:G3');
       const summaryCell = itemSheet.getCell('A3');
-      summaryCell.value = `Category: ${categoryName}  |  Total Inward: ${inStr || '0'}  |  Total Outward: ${outStr || '0'}  |  Approx Balance: ${balanceStr}`;
+      const summaryBalStr = autoBalStr ? `Calculated Balance: ${autoBalStr}  |  Manual Balance: ${balanceStr}` : `Approx Balance: ${balanceStr}`;
+      summaryCell.value = `Category: ${categoryName}  |  Total Inward: ${inStr || '0'}  |  Total Outward: ${outStr || '0'}  |  ${summaryBalStr}`;
       summaryCell.font = { name: 'Arial', size: 12, bold: true, color: { argb: textColor } };
       summaryCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondaryColor } };
       summaryCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -199,6 +235,22 @@ export function Dashboard() {
       itemSheet.addRow([]); // Empty row
 
       // Entries Table Headers
+      // Auto balance row (only when units match)
+      if (autoBalances.length > 0) {
+        itemSheet.addRow([]); // spacing
+        const balLabelRow = itemSheet.addRow(['', 'CALCULATED BALANCE (Inward − Outward)', ...autoBalances.map(b => `${b.balance} ${b.unit}`), '', '', '']);
+        balLabelRow.eachCell((cell, col) => {
+          if (col === 2) {
+            cell.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF1E3A8A' } };
+          } else if (col >= 3 && col < 3 + autoBalances.length) {
+            cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: autoBalances[col - 3].balance >= 0 ? 'FF16A34A' : 'FFDC2626' } };
+          }
+          cell.alignment = { vertical: 'middle', horizontal: col >= 3 ? 'center' : 'left' };
+        });
+        balLabelRow.height = 22;
+        itemSheet.addRow([]); // spacing
+      }
+
       const entryHeaders = ['Date', 'Type', 'Quantity', 'Unit', 'Lot Number', 'Details/Source', 'Firm/Buyer'];
       const eHeaderRow = itemSheet.addRow(entryHeaders);
       eHeaderRow.eachCell((cell) => {
@@ -432,6 +484,9 @@ export function Dashboard() {
                   outTotals[u] = (outTotals[u] || 0) + e.quantity;
                 });
 
+                // Auto balance: inward - outward, only for matching units
+                const itemAutoBalances = calcAutoBalance(itemInwards, itemOutwards);
+
                 const balanceRecord = balances.find(b => b.itemId === item.id);
                 const cat = catMap.get(item.categoryId);
                 const shortCode = item.name.substring(0, 2).toUpperCase();
@@ -474,6 +529,21 @@ export function Dashboard() {
                       }
                     </td>
                     <td className="px-6 py-4">
+                      {/* Auto-calculated balance — always visible (units must match) */}
+                      {itemAutoBalances.length > 0 && (
+                        <div className="mb-2 flex flex-col gap-1">
+                          {itemAutoBalances.map(b => (
+                            <div key={b.unit} className="flex items-center gap-1.5">
+                              <span className={`font-data-mono font-bold text-sm ${
+                                b.balance >= 0 ? 'text-emerald-600' : 'text-red-600'
+                              }`}>
+                                {b.balance >= 0 ? '+' : ''}{b.balance} {b.unit}
+                              </span>
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">AUTO</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {isAdmin ? (
                          <BalanceInput 
                            item={item} 
