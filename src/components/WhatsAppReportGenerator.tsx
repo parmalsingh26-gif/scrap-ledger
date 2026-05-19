@@ -82,38 +82,40 @@ export function WhatsAppReportGenerator({ compact = false }: { compact?: boolean
   }
 
   return (
-    <div className="bg-green-50 border border-green-200 rounded-xl p-5 mt-8">
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
-        <h3 className="text-lg font-semibold text-green-900 flex items-center">
-          <MessageCircle className="w-5 h-5 mr-2 text-green-600" />
-          WhatsApp Report Generator
-        </h3>
-        <input 
-          type="date"
-          className="form-input text-sm border-green-200 rounded-md py-1.5 px-3 focus:ring-green-500 max-w-[200px]"
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
-        />
+    <div className="bg-green-50 border border-green-200 rounded-xl p-5 h-full flex flex-col justify-between">
+      <div>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
+          <h3 className="text-sm font-semibold text-green-900 flex items-center">
+            <MessageCircle className="w-4 h-4 mr-1.5 text-green-600" />
+            WhatsApp Report
+          </h3>
+          <input 
+            type="date"
+            className="form-input text-xs border-green-200 rounded-md py-1 px-2 focus:ring-green-500 max-w-[130px]"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+          />
+        </div>
+
+        <div className="bg-white p-3 rounded-lg border border-green-100 shadow-inner font-mono text-xs leading-relaxed whitespace-pre-wrap max-h-24 overflow-y-auto mb-4 text-gray-700 flex-1">
+          {generateReportText()}
+        </div>
       </div>
 
-      <div className="bg-white p-4 rounded-lg border border-green-100 shadow-inner font-mono text-sm leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto mb-4 text-gray-700">
-        {generateReportText()}
-      </div>
-
-      <div className="flex space-x-3">
+      <div className="flex space-x-2">
         <button 
           onClick={handleCopy}
-          className="flex-1 bg-white border border-gray-300 shadow-sm py-2 px-4 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center transition-colors"
+          className="flex-1 bg-white border border-gray-300 shadow-sm py-1.5 px-3 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center transition-colors"
         >
-          {copied ? <Check className="w-4 h-4 mr-2 text-green-600" /> : <Copy className="w-4 h-4 mr-2" />}
+          {copied ? <Check className="w-3 h-3 mr-1.5 text-green-600" /> : <Copy className="w-3 h-3 mr-1.5" />}
           {copied ? 'Copied' : 'Copy'}
         </button>
         <button 
           onClick={handleShare}
-          className="flex-1 bg-[#25D366] hover:bg-[#128C7E] text-white shadow-sm py-2 px-4 rounded-lg text-sm font-medium flex items-center justify-center transition-colors"
+          className="flex-1 bg-[#25D366] hover:bg-[#128C7E] text-white shadow-sm py-1.5 px-3 rounded-lg text-xs font-medium flex items-center justify-center transition-colors"
         >
-          <MessageCircle className="w-4 h-4 mr-2" />
-          Share to WhatsApp
+          <MessageCircle className="w-3 h-3 mr-1.5" />
+          Share
         </button>
       </div>
     </div>

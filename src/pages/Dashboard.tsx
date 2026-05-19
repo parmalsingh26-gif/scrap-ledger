@@ -382,14 +382,13 @@ export function Dashboard() {
             <span className="material-symbols-outlined text-[16px]">download</span>
             Excel
           </button>
-          <WhatsAppReportGenerator />
         </div>
       </div>
 
-      {/* Stats + WhatsApp — 4 columns in one row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Stats + WhatsApp — 3 columns in one row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Total Inward */}
-        <div className="glass-card rounded-xl p-4 relative overflow-hidden group hover:shadow-lg transition-shadow duration-300">
+        <div className="glass-card rounded-xl p-4 relative overflow-hidden group hover:shadow-lg transition-shadow duration-300 flex flex-col justify-between">
           <div className="absolute top-0 right-0 w-20 h-20 bg-tertiary-container/10 rounded-full blur-2xl -mr-4 -mt-4"></div>
           <div className="flex justify-between items-start relative z-10">
             <div>
@@ -400,7 +399,7 @@ export function Dashboard() {
               <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>arrow_downward</span>
             </div>
           </div>
-          <div className="mt-3 h-8 flex items-end gap-0.5 relative z-10 opacity-60">
+          <div className="mt-6 h-8 flex items-end gap-0.5 relative z-10 opacity-60">
             <div className="flex-1 bg-tertiary/20 h-1/4 rounded-t-sm"></div>
             <div className="flex-1 bg-tertiary/30 h-2/4 rounded-t-sm"></div>
             <div className="flex-1 bg-tertiary/40 h-1/3 rounded-t-sm"></div>
@@ -411,7 +410,7 @@ export function Dashboard() {
         </div>
 
         {/* Total Outward */}
-        <div className="glass-card rounded-xl p-4 relative overflow-hidden group hover:shadow-lg transition-shadow duration-300">
+        <div className="glass-card rounded-xl p-4 relative overflow-hidden group hover:shadow-lg transition-shadow duration-300 flex flex-col justify-between">
           <div className="absolute top-0 right-0 w-20 h-20 bg-secondary-container/10 rounded-full blur-2xl -mr-4 -mt-4"></div>
           <div className="flex justify-between items-start relative z-10">
             <div>
@@ -422,7 +421,7 @@ export function Dashboard() {
               <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>arrow_upward</span>
             </div>
           </div>
-          <div className="mt-3 h-8 flex items-end gap-0.5 relative z-10 opacity-60">
+          <div className="mt-6 h-8 flex items-end gap-0.5 relative z-10 opacity-60">
             <div className="flex-1 bg-secondary/80 h-full rounded-t-sm"></div>
             <div className="flex-1 bg-secondary/60 h-3/4 rounded-t-sm"></div>
             <div className="flex-1 bg-secondary/50 h-2/3 rounded-t-sm"></div>
@@ -432,29 +431,9 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Overall Balance */}
-        <div className="glass-card rounded-xl p-4 relative overflow-hidden group hover:shadow-lg transition-shadow duration-300">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-primary-container/10 rounded-full blur-2xl -mr-4 -mt-4"></div>
-          <div className="flex justify-between items-start relative z-10">
-            <div>
-              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-[11px]">Overall Balance</p>
-              <h3 className="font-display-lg text-display-lg text-on-surface mt-1 text-2xl">
-                {totalBalance}<span className="text-sm text-outline ml-0.5">u</span>
-              </h3>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-              <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>account_balance</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 text-outline-variant font-data-mono text-data-mono relative z-10 mt-3 text-[11px]">
-            <span className="material-symbols-outlined text-[13px]">lock</span>
-            <span>Admin view only</span>
-          </div>
-        </div>
-
-        {/* WhatsApp card — 4th column */}
+        {/* WhatsApp card — 3rd column */}
         <div className="col-span-1">
-          <WhatsAppReportGenerator compact />
+          <WhatsAppReportGenerator />
         </div>
       </div>
 
