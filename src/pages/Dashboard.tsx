@@ -125,7 +125,7 @@ export function Dashboard() {
     indexSheet.addRow([]); // Empty row
     
     // Headers for Index
-    const headers = ['S.No.', 'Material Name', 'Category', 'Total Inward', 'Total Outward', 'Approx Balance'];
+    const headers = ['S.No.', 'Material Name', 'Category', 'Total Inward', 'Total Outward', 'Approx Balance', 'Action'];
     const headerRow = indexSheet.addRow(headers);
     headerRow.eachCell((cell) => {
       cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -146,6 +146,7 @@ export function Dashboard() {
       { width: 30 },
       { width: 25 },
       { width: 25 },
+      { width: 20 },
       { width: 20 }
     ];
 
@@ -178,7 +179,7 @@ export function Dashboard() {
       // Add Row to Index
       // In index: show auto-balance if available, else manual balance, else '-'
       const indexBalStr = autoBalStr || balanceStr;
-      const row = indexSheet.addRow([sno++, item.name, categoryName, inStr || '-', outStr || '-', indexBalStr]);
+      const row = indexSheet.addRow([sno++, item.name, categoryName, inStr || '-', outStr || '-', indexBalStr, 'View Sheet ➡️']);
       
       row.eachCell((cell, colNumber) => {
         cell.font = { name: 'Arial', size: 11, color: { argb: textColor } };
@@ -186,10 +187,10 @@ export function Dashboard() {
         cell.border = {
           bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }
         };
-        // Add hyperlink to Item Name column
-        if (colNumber === 2) {
+        // Add hyperlink to Item Name column and Action column
+        if (colNumber === 2 || colNumber === 7) {
           cell.value = {
-            text: item.name,
+            text: colNumber === 2 ? item.name : 'View Sheet ➡️',
             hyperlink: `#'${safeSheetName}'!A1`,
             tooltip: `Go to ${item.name} sheet`
           };
@@ -366,7 +367,7 @@ export function Dashboard() {
           <h2 className="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface">The Ledger</h2>
           <p className="font-body-md text-body-md text-on-surface-variant mt-1">Real-time overview of industrial materials.</p>
         </div>
-        <div className="flex gap-3 w-full sm:w-auto">
+        <div className="flex gap-3 w-full sm:w-auto items-start">
           <input
             type="text"
             placeholder="Search inventory..."
