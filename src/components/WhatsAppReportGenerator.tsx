@@ -4,7 +4,7 @@ import { db, useLiveQuery } from '../db/db';
 import { format } from 'date-fns';
 import { MessageCircle, Check, Copy } from 'lucide-react';
 
-export function WhatsAppReportGenerator() {
+export function WhatsAppReportGenerator({ compact = false }: { compact?: boolean }) {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [copied, setCopied] = useState(false);
 
@@ -48,6 +48,38 @@ export function WhatsAppReportGenerator() {
     const text = encodeURIComponent(generateReportText());
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
+
+  if (compact) {
+    return (
+      <div className="bg-green-50 border border-green-200 rounded-xl p-4 h-full flex flex-col">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h3 className="text-sm font-semibold text-green-900 flex items-center gap-1">
+            <MessageCircle className="w-4 h-4 text-green-600" />
+            WhatsApp Report
+          </h3>
+          <input 
+            type="date"
+            className="form-input text-xs border-green-200 rounded-md py-1 px-2 focus:ring-green-500 max-w-[130px]"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+          />
+        </div>
+        <div className="bg-white p-2 rounded-lg border border-green-100 shadow-inner font-mono text-xs leading-relaxed whitespace-pre-wrap max-h-16 overflow-y-auto mb-3 text-gray-700 flex-1">
+          {generateReportText()}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleCopy} className="flex-1 bg-white border border-gray-300 shadow-sm py-1.5 px-2 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center transition-colors">
+            {copied ? <Check className="w-3 h-3 mr-1 text-green-600" /> : <Copy className="w-3 h-3 mr-1" />}
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+          <button onClick={handleShare} className="flex-1 bg-[#25D366] hover:bg-[#128C7E] text-white shadow-sm py-1.5 px-2 rounded-lg text-xs font-medium flex items-center justify-center transition-colors">
+            <MessageCircle className="w-3 h-3 mr-1" />
+            Share
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-green-50 border border-green-200 rounded-xl p-5 mt-8">

@@ -191,7 +191,7 @@ export function Dashboard() {
         if (colNumber === 2 || colNumber === 7) {
           cell.value = {
             text: colNumber === 2 ? item.name : 'View Sheet ➡️',
-            hyperlink: `#'${safeSheetName}'!A1`,
+            hyperlink: `#${safeSheetName}!A1`,
             tooltip: `Go to ${item.name} sheet`
           };
           cell.font = { name: 'Arial', size: 11, color: { argb: accentColor }, underline: true, bold: true };
@@ -209,7 +209,7 @@ export function Dashboard() {
       // Back to Index link
       itemSheet.mergeCells('A1:G1');
       const backCell = itemSheet.getCell('A1');
-      backCell.value = { text: '⬅ Back to Index', hyperlink: `#'Index'!A1` };
+      backCell.value = { text: '⬅ Back to Index', hyperlink: `#Index!A1` };
       backCell.font = { name: 'Arial', size: 12, color: { argb: accentColor }, underline: true, italic: true };
       backCell.alignment = { vertical: 'middle' };
       itemSheet.getRow(1).height = 25;
@@ -360,90 +360,101 @@ export function Dashboard() {
   const totalBalance = balances.reduce((acc, curr) => acc + curr.approxBalance, 0).toFixed(1);
 
   return (
-    <div className="animate-fade-in space-y-8">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
-        <div>
+    <div className="animate-fade-in space-y-6">
+      {/* Page Header — Title left, Actions right */}
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+        <div className="flex-1">
           <h2 className="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface">The Ledger</h2>
-          <p className="font-body-md text-body-md text-on-surface-variant mt-1">Real-time overview of industrial materials.</p>
+          <p className="font-body-md text-body-md text-on-surface-variant mt-0.5">Real-time overview of industrial materials.</p>
         </div>
-        <div className="flex gap-3 w-full sm:w-auto items-start">
-          <input
-            type="text"
-            placeholder="Search inventory..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full sm:w-48 bg-white/60 border border-outline-variant/30 rounded-lg px-4 py-2 font-body-sm text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition-all"
-          />
-          <button onClick={exportToExcel} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 border border-emerald-400 rounded-lg shadow-md hover:shadow-lg hover:from-emerald-600 hover:to-emerald-700 transition-all font-label-md text-label-md text-white font-medium">
-            <span className="material-symbols-outlined text-[18px]">download</span>
-            Premium Excel
+        <div className="flex gap-2 items-center flex-shrink-0">
+          <div className="relative">
+            <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-outline text-[16px]">search</span>
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8 pr-3 py-2 w-36 bg-white/60 border border-outline-variant/30 rounded-lg font-body-sm text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition-all"
+            />
+          </div>
+          <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-lg shadow-sm hover:shadow-md hover:from-emerald-600 hover:to-emerald-700 transition-all text-white text-sm font-medium whitespace-nowrap">
+            <span className="material-symbols-outlined text-[16px]">download</span>
+            Excel
           </button>
           <WhatsAppReportGenerator />
         </div>
       </div>
 
-      {/* Key Metrics Bento Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="glass-card rounded-xl p-6 relative overflow-hidden group hover:shadow-lg transition-shadow duration-300">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-tertiary-container/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
-          <div className="flex justify-between items-start mb-4 relative z-10">
+      {/* Stats + WhatsApp — 4 columns in one row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Total Inward */}
+        <div className="glass-card rounded-xl p-4 relative overflow-hidden group hover:shadow-lg transition-shadow duration-300">
+          <div className="absolute top-0 right-0 w-20 h-20 bg-tertiary-container/10 rounded-full blur-2xl -mr-4 -mt-4"></div>
+          <div className="flex justify-between items-start relative z-10">
             <div>
-              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Total Inward</p>
-              <h3 className="font-display-lg text-display-lg text-on-surface mt-1">{totalInward}<span className="text-headline-md text-outline">u</span></h3>
+              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-[11px]">Total Inward</p>
+              <h3 className="font-display-lg text-display-lg text-on-surface mt-1 text-2xl">{totalInward}<span className="text-sm text-outline ml-0.5">u</span></h3>
             </div>
-            <div className="w-10 h-10 rounded-full bg-tertiary-container/20 flex items-center justify-center text-tertiary">
-              <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>arrow_downward</span>
+            <div className="w-8 h-8 rounded-full bg-tertiary-container/20 flex items-center justify-center text-tertiary">
+              <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>arrow_downward</span>
             </div>
           </div>
-          <div className="mt-4 h-10 flex items-end gap-1 relative z-10 opacity-70">
-            <div className="w-1/6 bg-tertiary/20 h-1/4 rounded-t-sm"></div>
-            <div className="w-1/6 bg-tertiary/30 h-2/4 rounded-t-sm"></div>
-            <div className="w-1/6 bg-tertiary/40 h-1/3 rounded-t-sm"></div>
-            <div className="w-1/6 bg-tertiary/50 h-3/4 rounded-t-sm"></div>
-            <div className="w-1/6 bg-tertiary/60 h-2/3 rounded-t-sm"></div>
-            <div className="w-1/6 bg-tertiary h-full rounded-t-sm"></div>
+          <div className="mt-3 h-8 flex items-end gap-0.5 relative z-10 opacity-60">
+            <div className="flex-1 bg-tertiary/20 h-1/4 rounded-t-sm"></div>
+            <div className="flex-1 bg-tertiary/30 h-2/4 rounded-t-sm"></div>
+            <div className="flex-1 bg-tertiary/40 h-1/3 rounded-t-sm"></div>
+            <div className="flex-1 bg-tertiary/50 h-3/4 rounded-t-sm"></div>
+            <div className="flex-1 bg-tertiary/60 h-2/3 rounded-t-sm"></div>
+            <div className="flex-1 bg-tertiary h-full rounded-t-sm"></div>
           </div>
         </div>
 
-        <div className="glass-card rounded-xl p-6 relative overflow-hidden group hover:shadow-lg transition-shadow duration-300">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-secondary-container/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
-          <div className="flex justify-between items-start mb-4 relative z-10">
+        {/* Total Outward */}
+        <div className="glass-card rounded-xl p-4 relative overflow-hidden group hover:shadow-lg transition-shadow duration-300">
+          <div className="absolute top-0 right-0 w-20 h-20 bg-secondary-container/10 rounded-full blur-2xl -mr-4 -mt-4"></div>
+          <div className="flex justify-between items-start relative z-10">
             <div>
-              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Total Outward</p>
-              <h3 className="font-display-lg text-display-lg text-on-surface mt-1">{totalOutward}<span className="text-headline-md text-outline">u</span></h3>
+              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-[11px]">Total Outward</p>
+              <h3 className="font-display-lg text-display-lg text-on-surface mt-1 text-2xl">{totalOutward}<span className="text-sm text-outline ml-0.5">u</span></h3>
             </div>
-            <div className="w-10 h-10 rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary">
-              <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>arrow_upward</span>
+            <div className="w-8 h-8 rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary">
+              <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>arrow_upward</span>
             </div>
           </div>
-          <div className="mt-4 h-10 flex items-end gap-1 relative z-10 opacity-70">
-            <div className="w-1/6 bg-secondary/80 h-full rounded-t-sm"></div>
-            <div className="w-1/6 bg-secondary/60 h-3/4 rounded-t-sm"></div>
-            <div className="w-1/6 bg-secondary/50 h-2/3 rounded-t-sm"></div>
-            <div className="w-1/6 bg-secondary/30 h-1/3 rounded-t-sm"></div>
-            <div className="w-1/6 bg-secondary/40 h-2/4 rounded-t-sm"></div>
-            <div className="w-1/6 bg-secondary/20 h-1/4 rounded-t-sm"></div>
+          <div className="mt-3 h-8 flex items-end gap-0.5 relative z-10 opacity-60">
+            <div className="flex-1 bg-secondary/80 h-full rounded-t-sm"></div>
+            <div className="flex-1 bg-secondary/60 h-3/4 rounded-t-sm"></div>
+            <div className="flex-1 bg-secondary/50 h-2/3 rounded-t-sm"></div>
+            <div className="flex-1 bg-secondary/30 h-1/3 rounded-t-sm"></div>
+            <div className="flex-1 bg-secondary/40 h-2/4 rounded-t-sm"></div>
+            <div className="flex-1 bg-secondary/20 h-1/4 rounded-t-sm"></div>
           </div>
         </div>
 
-        <div className="glass-card rounded-xl p-6 relative overflow-hidden group hover:shadow-lg transition-shadow duration-300">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-primary-container/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
-          <div className="flex justify-between items-start mb-4 relative z-10">
+        {/* Overall Balance */}
+        <div className="glass-card rounded-xl p-4 relative overflow-hidden group hover:shadow-lg transition-shadow duration-300">
+          <div className="absolute top-0 right-0 w-20 h-20 bg-primary-container/10 rounded-full blur-2xl -mr-4 -mt-4"></div>
+          <div className="flex justify-between items-start relative z-10">
             <div>
-              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Overall Balance</p>
-              <h3 className="font-display-lg text-display-lg text-on-surface mt-1">
-                {totalBalance}<span className="text-headline-md text-outline">u</span>
+              <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-[11px]">Overall Balance</p>
+              <h3 className="font-display-lg text-display-lg text-on-surface mt-1 text-2xl">
+                {totalBalance}<span className="text-sm text-outline ml-0.5">u</span>
               </h3>
             </div>
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-              <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>account_balance</span>
+            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+              <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>account_balance</span>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-outline-variant font-data-mono text-data-mono relative z-10">
-            <span className="material-symbols-outlined text-[16px]">lock</span>
+          <div className="flex items-center gap-1.5 text-outline-variant font-data-mono text-data-mono relative z-10 mt-3 text-[11px]">
+            <span className="material-symbols-outlined text-[13px]">lock</span>
             <span>Admin view only</span>
           </div>
+        </div>
+
+        {/* WhatsApp card — 4th column */}
+        <div className="col-span-1">
+          <WhatsAppReportGenerator compact />
         </div>
       </div>
 
