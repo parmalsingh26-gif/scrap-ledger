@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { WhatsAppReportGenerator } from '../components/WhatsAppReportGenerator';
 import { useAuth } from '../components/AuthProvider';
 import { EditInwardModal } from '../components/EditInwardModal';
+import { EditOutwardModal } from '../components/EditOutwardModal';
 import { ScrapChart } from '../components/ScrapChart';
 import { CategoryBadge } from '../components/CategoryBadge';
 
@@ -25,6 +26,7 @@ export function Dashboard() {
   const [pin, setPin] = useState('');
   
   const [editingEntry, setEditingEntry] = useState<InwardEntry | null>(null);
+  const [editingOutwardEntry, setEditingOutwardEntry] = useState<OutwardEntry | null>(null);
 
   if (!items || !units || !inwardEntries || !outwardEntries || !balances || !categories) return null;
 
@@ -32,9 +34,19 @@ export function Dashboard() {
   const catMap = new Map(categories.map(c => [c.id, c]));
 
   const handleDeleteEntry = async (id: number) => {
-    if (confirm('Are you sure you want to delete this entry?')) {
+    if (confirm('Are you sure you want to delete this inward entry?')) {
       try {
         await db.inwardEntries.delete(id);
+      } catch(err) {
+        alert('Failed to delete entry');
+      }
+    }
+  };
+
+  const handleDeleteOutwardEntry = async (id: number) => {
+    if (confirm('Are you sure you want to delete this outward entry?')) {
+      try {
+        await db.outwardEntries.delete(id);
       } catch(err) {
         alert('Failed to delete entry');
       }
@@ -178,7 +190,7 @@ export function Dashboard() {
           <div className="flex justify-between items-start mb-4 relative z-10">
             <div>
               <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider">Overall Balance</p>
-              <h3 className="font-display-lg text-display-lg text-on-surface mt-1 blur-balance" title="Hover to reveal">
+              <h3 className="font-display-lg text-display-lg text-on-surface mt-1">
                 {totalBalance}<span className="text-headline-md text-outline">u</span>
               </h3>
             </div>
@@ -317,7 +329,7 @@ export function Dashboard() {
       {/* PIN Prompt Modal */}
       {pinPrompt && !isAdmin && (
          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-inverse-surface/40 backdrop-blur-sm">
-            <div className="glass-card rounded-2xl p-xl max-w-sm w-full text-center flex flex-col items-center relative">
+            <div className="glass-card rounded-2xl p-8 max-w-sm w-full text-center flex flex-col items-center relative">
                <button onClick={() => setPinPrompt(false)} className="absolute top-4 right-4 text-outline hover:text-on-surface">
                   <span className="material-symbols-outlined">close</span>
                </button>
@@ -403,12 +415,12 @@ export function Dashboard() {
                                )}
                             </div>
                             
-                            {!isIdxOutward && isAdmin && (
+                            {isAdmin && (
                                 <div className="mt-3 pt-2 border-t border-outline-variant/20 flex justify-end space-x-3">
-                                  <button onClick={() => setEditingEntry(entry as InwardEntry)} className="text-primary hover:text-primary-container flex items-center text-xs font-label-md transition-colors">
+                                  <button onClick={() => isIdxOutward ? setEditingOutwardEntry(entry as OutwardEntry) : setEditingEntry(entry as InwardEntry)} className="text-primary hover:text-primary-container flex items-center text-xs font-label-md transition-colors">
                                     <span className="material-symbols-outlined text-[16px] mr-1">edit</span> Edit
                                   </button>
-                                  <button onClick={() => handleDeleteEntry((entry as any).id)} className="text-error flex items-center hover:text-error-container text-xs font-label-md transition-colors">
+                                  <button onClick={() => isIdxOutward ? handleDeleteOutwardEntry((entry as any).id) : handleDeleteEntry((entry as any).id)} className="text-error flex items-center hover:text-error-container text-xs font-label-md transition-colors">
                                     <span className="material-symbols-outlined text-[16px] mr-1">delete</span> Delete
                                   </button>
                                 </div>
@@ -435,6 +447,14 @@ export function Dashboard() {
           entry={editingEntry}
           item={historyItem}
           onClose={() => setEditingEntry(null)}
+        />
+      )}
+
+      {editingOutwardEntry && historyItem && (
+        <EditOutwardModal 
+          entry={editingOutwardEntry}
+          item={historyItem}
+          onClose={() => setEditingOutwardEntry(null)}
         />
       )}
     </div>

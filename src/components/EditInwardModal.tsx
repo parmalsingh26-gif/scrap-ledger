@@ -64,7 +64,7 @@ export function EditInwardModal({
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6">
       <div className="absolute inset-0 bg-inverse-surface/40 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative w-full max-w-2xl bg-white/95 dark:bg-inverse-surface/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/40 dark:border-outline-variant/20 overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-[600px] bg-white/95 dark:bg-inverse-surface/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/40 dark:border-outline-variant/20 overflow-hidden flex flex-col max-h-[90vh]">
         
         <div className="px-6 py-4 border-b border-outline-variant/20 flex items-center justify-between bg-surface/50 flex-shrink-0">
           <div className="flex items-center gap-3">
