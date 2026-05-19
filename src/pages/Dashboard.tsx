@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ExcelJS from 'exceljs';
 
 import { db, useLiveQuery, type Item, type InwardEntry, type OutwardEntry } from '../db/db';
 import { cn } from '../lib/utils';
@@ -69,13 +70,65 @@ export function Dashboard() {
     return [...inward, ...outward].sort((a, b) => b.timestamp - a.timestamp);
   };
 
-  const exportToCSV = () => {
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Item Name,Category,Total Inward,Total Outward,Approx Remaining Balance\n";
+  const exportToExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Scrap Ledger App';
+    workbook.created = new Date();
+
+    // Custom Colors
+    const primaryColor = 'FF1E3A8A'; // Dark Blue
+    const secondaryColor = 'FFF1F5F9'; // Light Gray
+    const accentColor = 'FF2563EB'; // Bright Blue
+    const inwardColor = 'FF16A34A'; // Green
+    const outwardColor = 'FFDC2626'; // Red
+    const textColor = 'FF1E293B'; // Slate 800
+
+    // 1. Create Index Sheet
+    const indexSheet = workbook.addWorksheet('Index');
     
-    items.forEach(item => {
+    // Title for Index
+    indexSheet.mergeCells('A1:E1');
+    const titleCell = indexSheet.getCell('A1');
+    titleCell.value = 'INVENTORY MASTER INDEX';
+    titleCell.font = { name: 'Arial', size: 20, bold: true, color: { argb: 'FFFFFFFF' } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryColor } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    indexSheet.getRow(1).height = 40;
+
+    indexSheet.addRow([]); // Empty row
+    
+    // Headers for Index
+    const headers = ['S.No.', 'Material Name', 'Category', 'Total Inward', 'Total Outward', 'Approx Balance'];
+    const headerRow = indexSheet.addRow(headers);
+    headerRow.eachCell((cell) => {
+      cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: accentColor } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+      };
+    });
+    headerRow.height = 25;
+
+    indexSheet.columns = [
+      { width: 10 },
+      { width: 35 },
+      { width: 30 },
+      { width: 25 },
+      { width: 25 },
+      { width: 20 }
+    ];
+
+    // Build data sheets and populate index
+    let sno = 1;
+    const sortedItems = [...items].sort((a,b) => a.name.localeCompare(b.name));
+    
+    for (const item of sortedItems) {
       const cat = catMap.get(item.categoryId);
-      const categoryName = cat ? cat.name : '';
+      const categoryName = cat ? cat.name : 'Unknown';
       
       const itemInwards = inwardEntries.filter(e => e.itemId === item.id);
       const itemOutwards = outwardEntries.filter(e => e.itemId === item.id);
@@ -84,22 +137,158 @@ export function Dashboard() {
       const outStr = Array.from(new Set(itemOutwards.map(e => e.unitId))).map(uid => `${itemOutwards.filter(e => e.unitId === uid).reduce((sum, e) => sum + e.quantity, 0)} ${unitMap.get(uid)}`).join(' | ');
       
       const balance = balances.find(b => b.itemId === item.id);
-      let balanceStr = "";
-      if (balance) {
-         balanceStr = `${balance.approxBalance} ${unitMap.get(balance.unitId)}`;
-      }
-      
-      const row = `"${item.name}","${categoryName}","${inStr}","${outStr}","${balanceStr}"`;
-      csvContent += row + "\n";
-    });
+      const balanceStr = balance ? `${balance.approxBalance} ${unitMap.get(balance.unitId)}` : '-';
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `inventory_export_${format(new Date(), 'yyyyMMdd')}.csv`);
+      // Clean sheet name (Excel limits to 31 chars and no special chars like [])
+      const safeSheetName = item.name.replace(/[\\/?*\[\]]/g, '').substring(0, 31);
+      
+      // Add Row to Index
+      const row = indexSheet.addRow([sno++, item.name, categoryName, inStr || '-', outStr || '-', balanceStr]);
+      
+      row.eachCell((cell, colNumber) => {
+        cell.font = { name: 'Arial', size: 11, color: { argb: textColor } };
+        cell.alignment = { vertical: 'middle', horizontal: colNumber > 3 ? 'center' : 'left' };
+        cell.border = {
+          bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+        };
+        // Add hyperlink to Item Name column
+        if (colNumber === 2) {
+          cell.value = {
+            text: item.name,
+            hyperlink: `#'${safeSheetName}'!A1`,
+            tooltip: `Go to ${item.name} sheet`
+          };
+          cell.font = { name: 'Arial', size: 11, color: { argb: accentColor }, underline: true, bold: true };
+        }
+      });
+      if (sno % 2 === 1) {
+        row.eachCell(cell => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+        });
+      }
+
+      // --- CREATE INDIVIDUAL ITEM SHEET ---
+      const itemSheet = workbook.addWorksheet(safeSheetName);
+      
+      // Back to Index link
+      itemSheet.mergeCells('A1:G1');
+      const backCell = itemSheet.getCell('A1');
+      backCell.value = { text: '⬅ Back to Index', hyperlink: `#'Index'!A1` };
+      backCell.font = { name: 'Arial', size: 12, color: { argb: accentColor }, underline: true, italic: true };
+      backCell.alignment = { vertical: 'middle' };
+      itemSheet.getRow(1).height = 25;
+
+      // Item Title
+      itemSheet.mergeCells('A2:G2');
+      const itemTitle = itemSheet.getCell('A2');
+      itemTitle.value = `MATERIAL LEDGER: ${item.name.toUpperCase()}`;
+      itemTitle.font = { name: 'Arial', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
+      itemTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: primaryColor } };
+      itemTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+      itemSheet.getRow(2).height = 35;
+
+      // Summary Info
+      itemSheet.mergeCells('A3:G3');
+      const summaryCell = itemSheet.getCell('A3');
+      summaryCell.value = `Category: ${categoryName}  |  Total Inward: ${inStr || '0'}  |  Total Outward: ${outStr || '0'}  |  Approx Balance: ${balanceStr}`;
+      summaryCell.font = { name: 'Arial', size: 12, bold: true, color: { argb: textColor } };
+      summaryCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: secondaryColor } };
+      summaryCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      itemSheet.getRow(3).height = 30;
+
+      itemSheet.addRow([]); // Empty row
+
+      // Entries Table Headers
+      const entryHeaders = ['Date', 'Type', 'Quantity', 'Unit', 'Lot Number', 'Details/Source', 'Firm/Buyer'];
+      const eHeaderRow = itemSheet.addRow(entryHeaders);
+      eHeaderRow.eachCell((cell) => {
+        cell.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: accentColor } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+        };
+      });
+      eHeaderRow.height = 20;
+
+      itemSheet.columns = [
+        { width: 20 },
+        { width: 15 },
+        { width: 15 },
+        { width: 10 },
+        { width: 20 },
+        { width: 30 },
+        { width: 30 }
+      ];
+
+      // Combine and sort entries
+      const allEntries = [
+        ...itemInwards.map(e => ({ ...e, _type: 'INWARD' as const, ts: new Date(e.date).getTime(), dateStr: format(new Date(e.date), 'dd-MMM-yyyy HH:mm') })),
+        ...itemOutwards.map(e => ({ ...e, _type: 'OUTWARD' as const, ts: new Date(e.dateDelivered).getTime(), dateStr: format(new Date(e.dateDelivered), 'dd-MMM-yyyy HH:mm') }))
+      ].sort((a, b) => a.ts - b.ts);
+
+      let rowNum = 0;
+      allEntries.forEach(entry => {
+        rowNum++;
+        const isOutward = entry._type === 'OUTWARD';
+        const qtyStr = isOutward ? `-${entry.quantity}` : `+${entry.quantity}`;
+        const unitName = unitMap.get(entry.unitId) || '';
+        const lotNumber = (entry as any).lotNumber || '-';
+        const details = isOutward ? '-' : `${(entry as any).machineType || ''} ${(entry as any).coverType || ''}`.trim() || '-';
+        const firm = isOutward ? (entry as any).firmName : '-';
+        
+        const row = itemSheet.addRow([
+          entry.dateStr,
+          entry._type,
+          qtyStr,
+          unitName,
+          lotNumber,
+          details,
+          firm
+        ]);
+
+        row.eachCell((cell, colNumber) => {
+          cell.font = { name: 'Arial', size: 10, color: { argb: textColor }, bold: colNumber === 3 };
+          cell.alignment = { vertical: 'middle', horizontal: [3, 4, 5].includes(colNumber) ? 'center' : 'left' };
+          cell.border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+          
+          if (colNumber === 2) {
+             cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: isOutward ? outwardColor : inwardColor } };
+          }
+          if (colNumber === 3) {
+             cell.font = { name: 'Arial', size: 11, bold: true, color: { argb: isOutward ? outwardColor : inwardColor } };
+          }
+        });
+        
+        if (rowNum % 2 === 0) {
+          row.eachCell(cell => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+          });
+        }
+      });
+      
+      if (allEntries.length === 0) {
+        const emptyRow = itemSheet.addRow(['No entries found for this material.', '', '', '', '', '', '']);
+        itemSheet.mergeCells(`A${emptyRow.number}:G${emptyRow.number}`);
+        emptyRow.getCell(1).alignment = { horizontal: 'center' };
+        emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF9CA3AF' } };
+      }
+    }
+
+    // Export using ArrayBuffer and Blob
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Premium_Scrap_Ledger_${format(new Date(), 'yyyy_MM_dd')}.xlsx`;
     document.body.appendChild(link);
     link.click();
-    link.remove();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   };
   
   const handlePinSubmit = (e: any) => {
@@ -133,9 +322,9 @@ export function Dashboard() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full sm:w-48 bg-white/60 border border-outline-variant/30 rounded-lg px-4 py-2 font-body-sm text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40 transition-all"
           />
-          <button onClick={exportToCSV} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-white/60 border border-outline-variant/30 rounded-lg hover:bg-white shadow-sm transition-colors font-label-md text-label-md text-on-surface">
+          <button onClick={exportToExcel} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 border border-emerald-400 rounded-lg shadow-md hover:shadow-lg hover:from-emerald-600 hover:to-emerald-700 transition-all font-label-md text-label-md text-white font-medium">
             <span className="material-symbols-outlined text-[18px]">download</span>
-            Export
+            Premium Excel
           </button>
           <WhatsAppReportGenerator />
         </div>
