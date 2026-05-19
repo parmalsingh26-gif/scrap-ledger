@@ -11,6 +11,10 @@ export function AdminSettings() {
   const [newItemName, setNewItemName] = useState('');
   const [newCategoryId, setNewCategoryId] = useState('');
   
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
+  const [editItemName, setEditItemName] = useState('');
+  const [editCategoryId, setEditCategoryId] = useState('');
+
   const [newUnitName, setNewUnitName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -39,6 +43,23 @@ export function AdminSettings() {
       await db.items.delete(id);
       await db.inventoryBalances.where('itemId').equals(id).delete();
     }
+  };
+
+  const handleStartEdit = (item: any) => {
+    setEditingItemId(item.id);
+    setEditItemName(item.name);
+    setEditCategoryId(item.categoryId.toString());
+  };
+
+  const handleUpdateItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItemId || !editItemName || !editCategoryId) return;
+    
+    await db.items.update(editingItemId, {
+      name: editItemName,
+      categoryId: Number(editCategoryId)
+    });
+    setEditingItemId(null);
   };
 
   const handleAddUnit = async (e: any) => {
@@ -223,6 +244,46 @@ export function AdminSettings() {
                 .sort((a,b) => a.name.localeCompare(b.name))
                 .map(item => {
                 const cat = catMap.get(item.categoryId);
+                
+                if (editingItemId === item.id) {
+                  return (
+                    <div key={item.id} className="p-3 border border-primary/30 rounded-xl bg-primary/5 shadow-sm">
+                      <form onSubmit={handleUpdateItem} className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex-1">
+                          <input 
+                            type="text" 
+                            className="glass-input w-full rounded-lg py-1.5 px-3 font-body-sm text-body-sm focus:outline-none focus:ring-1 focus:ring-primary/50 bg-white"
+                            value={editItemName}
+                            onChange={(e) => setEditItemName(e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div className="sm:w-1/3">
+                          <select 
+                            className="glass-input w-full rounded-lg py-1.5 px-3 font-body-sm text-body-sm focus:outline-none focus:ring-1 focus:ring-primary/50 appearance-none bg-white"
+                            value={editCategoryId}
+                            onChange={(e) => setEditCategoryId(e.target.value)}
+                            required
+                          >
+                            <option value="" disabled hidden>Category</option>
+                            {categories.map(c => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex gap-1 justify-end mt-2 sm:mt-0">
+                          <button type="submit" className="text-white bg-primary hover:bg-primary/90 p-1.5 rounded-lg transition-colors">
+                            <span className="material-symbols-outlined text-[18px]">check</span>
+                          </button>
+                          <button type="button" onClick={() => setEditingItemId(null)} className="text-on-surface-variant bg-surface-variant hover:bg-outline-variant/30 p-1.5 rounded-lg transition-colors">
+                            <span className="material-symbols-outlined text-[18px]">close</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={item.id} className="flex items-center justify-between p-3 border border-outline-variant/20 rounded-xl bg-white/60 hover:bg-white hover:shadow-sm transition-all group">
                     <div className="flex items-center gap-3">
@@ -239,12 +300,22 @@ export function AdminSettings() {
                         )}
                       </div>
                     </div>
-                    <button 
-                      onClick={() => handleDeleteItem(item.id!)}
-                      className="text-outline hover:text-error p-2 rounded-full hover:bg-error-container/20 transition-colors opacity-0 group-hover:opacity-100"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">delete</span>
-                    </button>
+                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button 
+                        onClick={() => handleStartEdit(item)}
+                        className="text-outline hover:text-primary p-2 rounded-full hover:bg-primary-container/20 transition-colors"
+                        title="Edit Item"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">edit</span>
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteItem(item.id!)}
+                        className="text-outline hover:text-error p-2 rounded-full hover:bg-error-container/20 transition-colors"
+                        title="Delete Item"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                      </button>
+                    </div>
                   </div>
                 )
               })}
