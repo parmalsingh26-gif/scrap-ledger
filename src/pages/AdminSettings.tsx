@@ -357,7 +357,7 @@ export function AdminSettings() {
                 </form>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-2 grid grid-cols-2 gap-2">
+              <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-2 content-start">
                 {units.map(unit => (
                    <div key={unit.id} className="flex items-center justify-between p-2.5 border border-outline-variant/20 rounded-xl bg-white/60 hover:bg-white transition-all group col-span-1">
                      <div className="font-label-md text-label-md text-on-surface flex items-center">
