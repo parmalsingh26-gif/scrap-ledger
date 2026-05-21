@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import ExcelJS from 'exceljs';
 
 import { db, useLiveQuery, type Item, type InwardEntry, type OutwardEntry } from '../db/db';
@@ -28,6 +29,16 @@ export function Dashboard() {
   
   const [editingEntry, setEditingEntry] = useState<InwardEntry | null>(null);
   const [editingOutwardEntry, setEditingOutwardEntry] = useState<OutwardEntry | null>(null);
+
+  // Lock body scroll when history modal is open — keeps modal in viewport center
+  useEffect(() => {
+    if (historyItem) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [historyItem]);
 
   if (!items || !units || !inwardEntries || !outwardEntries || !balances || !categories) return null;
 
@@ -606,11 +617,42 @@ export function Dashboard() {
          </div>
       )}
 
-      {/* History Modal */}
-      {historyItem && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-          <div className="absolute inset-0 bg-inverse-surface/40 backdrop-blur-sm" onClick={() => setHistoryItem(null)}></div>
-          <div className="relative w-full max-w-[600px] bg-white/90 dark:bg-inverse-surface/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/40 dark:border-outline-variant/20 overflow-hidden flex flex-col max-h-[85vh]">
+      {historyItem && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          {/* Backdrop */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(0,0,0,0.45)',
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={() => setHistoryItem(null)}
+          />
+          {/* Modal Box */}
+          <div style={{
+            position: 'relative',
+            width: '100%',
+            maxWidth: '600px',
+            maxHeight: '88vh',
+            background: 'rgba(255,255,255,0.97)',
+            borderRadius: '20px',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.25)',
+            border: '1px solid rgba(255,255,255,0.4)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
             <div className="px-6 py-4 border-b border-outline-variant/20 flex justify-between items-center bg-surface/50">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
@@ -625,12 +667,12 @@ export function Dashboard() {
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
-            
+
             <div className="p-6 overflow-y-auto flex-1">
               {(() => {
                 const timeline = getHistory(historyItem.id!);
                 if (timeline.length === 0) return <div className="text-center text-outline py-8 font-body-sm text-body-sm">No records found.</div>;
-                
+
                 return (
                   <div className="relative pl-4 space-y-8 before:absolute before:inset-y-0 before:left-[23px] before:w-px before:bg-outline-variant/40">
                     {timeline.map((entry, idx) => {
@@ -638,11 +680,11 @@ export function Dashboard() {
                       const u = unitMap.get(entry.unitId) || '';
                       return (
                         <div key={idx} className="relative pl-8">
-                          <div className={cn("absolute left-[-5px] top-1 w-3 h-3 rounded-full ring-4 ring-white dark:ring-inverse-surface z-10", isIdxOutward ? 'bg-secondary' : 'bg-tertiary')}></div>
+                          <div className={cn("absolute left-[-5px] top-1 w-3 h-3 rounded-full ring-4 ring-white z-10", isIdxOutward ? 'bg-secondary' : 'bg-tertiary')}></div>
                           <div className="flex justify-between items-start mb-1">
                             <span className={cn("font-label-md text-label-md font-bold", isIdxOutward ? 'text-secondary' : 'text-tertiary')}>{entry._type}</span>
                             <span className="font-body-sm text-body-sm text-outline text-[12px]">
-                               {isIdxOutward 
+                               {isIdxOutward
                                  ? format(new Date((entry as any).dateDelivered), 'MMM d, HH:mm')
                                  : format(new Date((entry as any).date), 'MMM d, HH:mm')
                                }
@@ -653,10 +695,18 @@ export function Dashboard() {
                               <span className="font-data-mono text-data-mono font-medium">{isIdxOutward ? '-' : '+'}{entry.quantity} {u}</span>
                               <span className="text-xs text-outline font-medium bg-white px-2 py-1 rounded border border-outline-variant/10">{(entry as any).lotNumber || 'No Lot'}</span>
                             </div>
-                            
+
                             <div className="mt-2 text-xs text-on-surface-variant">
                                {isIdxOutward ? (
-                                 <p>Buyer: {(entry as any).firmName}</p>
+                                 <>
+                                   <p>Buyer: {(entry as any).firmName}</p>
+                                   <p className="text-[11px] mt-0.5 flex items-center gap-1">
+                                     <span className="text-outline">Lot Applied:</span>{' '}
+                                     {(entry as any).dateLotApplied
+                                       ? <span className="font-medium">{(entry as any).dateLotApplied}</span>
+                                       : <span className="text-amber-500 font-semibold bg-amber-50 px-1.5 py-0.5 rounded text-[10px] border border-amber-200">Pending</span>}
+                                   </p>
+                                 </>
                                ) : (
                                  <p>
                                    {(entry as any).machineType && <span>Source: {(entry as any).machineType} | </span>}
@@ -664,7 +714,7 @@ export function Dashboard() {
                                  </p>
                                )}
                             </div>
-                            
+
                             {isAdmin && (
                                 <div className="mt-3 pt-2 border-t border-outline-variant/20 flex justify-end space-x-3">
                                   <button onClick={() => isIdxOutward ? setEditingOutwardEntry(entry as OutwardEntry) : setEditingEntry(entry as InwardEntry)} className="text-primary hover:text-primary-container flex items-center text-xs font-label-md transition-colors">
@@ -677,19 +727,21 @@ export function Dashboard() {
                             )}
                           </div>
                         </div>
-                      )
+                      );
                     })}
                   </div>
-                )
+                );
               })()}
             </div>
+
             <div className="px-6 py-4 border-t border-outline-variant/20 bg-surface/50 flex justify-end">
               <button className="px-4 py-2 bg-white border border-outline-variant/30 text-on-surface font-label-md text-label-md rounded-lg hover:bg-surface-variant/30 transition-colors" onClick={() => setHistoryItem(null)}>
-                  Close
+                Close
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {editingEntry && historyItem && (

@@ -9,6 +9,8 @@ const navItems = [
   { name: 'Dashboard', path: '/', icon: 'dashboard' },
   { name: 'Inward Entry', path: '/inward', icon: 'login' },
   { name: 'Outward Entry', path: '/outward', icon: 'logout' },
+  { name: 'Total Scrap Position', path: '/total-scrap', icon: 'analytics' },
+  { name: 'BVP Scrap Position', path: '/bvp-scrap', icon: 'precision_manufacturing' },
   { name: 'Admin Settings', path: '/admin', icon: 'admin_panel_settings' },
 ];
 

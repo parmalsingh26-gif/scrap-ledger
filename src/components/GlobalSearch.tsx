@@ -22,10 +22,19 @@ export function GlobalSearch() {
   const updateDropdownPosition = useCallback(() => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
+    const dropWidth = Math.max(rect.width, 480);
+    const viewportW = window.innerWidth;
+    // If right-overflow would happen, align to right edge of viewport with margin
+    let left = rect.left;
+    if (left + dropWidth > viewportW - 12) {
+      left = viewportW - dropWidth - 12;
+    }
+    // Never go off left edge
+    if (left < 8) left = 8;
     setDropdownPos({
       top: rect.bottom + 8,
-      left: rect.left,
-      width: Math.max(rect.width, 340),
+      left,
+      width: Math.min(dropWidth, viewportW - 20),
     });
   }, []);
 
@@ -123,7 +132,7 @@ export function GlobalSearch() {
           )}
         </div>
 
-        <div className="max-h-[420px] overflow-y-auto overscroll-contain">
+        <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: 'min(420px, 65vh)' }}>
           {matches.length === 0 ? (
             <div className="p-8 text-center">
               <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -148,8 +157,8 @@ export function GlobalSearch() {
                           {item.name.substring(0, 2).toUpperCase()}
                         </span>
                       </div>
-                      <div className="min-w-0">
-                        <h4 className="text-sm font-semibold text-gray-900 leading-tight truncate">
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-sm font-semibold text-gray-900 leading-tight break-words whitespace-normal">
                           {item.name}
                         </h4>
                         {cat && (

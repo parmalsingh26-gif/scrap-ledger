@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { db, useLiveQuery, type InwardEntry, type Item } from '../db/db';
 import { CategoryBadge } from './CategoryBadge';
 
@@ -61,11 +62,35 @@ export function EditInwardModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6">
-      <div className="absolute inset-0 bg-inverse-surface/40 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative w-full max-w-[600px] bg-white/95 dark:bg-inverse-surface/95 backdrop-blur-xl rounded-2xl shadow-xl border border-white/40 dark:border-outline-variant/20 overflow-hidden flex flex-col max-h-[90vh]">
-        
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 100000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+      }}
+    >
+      <div
+        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+        onClick={onClose}
+      />
+      <div style={{
+        position: 'relative',
+        width: '100%',
+        maxWidth: '600px',
+        maxHeight: '90vh',
+        background: 'rgba(255,255,255,0.97)',
+        borderRadius: '20px',
+        boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+        border: '1px solid rgba(255,255,255,0.4)',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
         <div className="px-6 py-4 border-b border-outline-variant/20 flex items-center justify-between bg-surface/50 flex-shrink-0">
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
@@ -94,15 +119,11 @@ export function EditInwardModal({
 
               <div className="space-y-2 relative pt-2">
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="number" step="0.01" min="0"
                   className="glass-input floating-input w-full rounded-xl py-3 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
-                  placeholder="Quantity"
-                  id="edit-qty"
-                  required
+                  placeholder="Quantity" id="edit-qty" required
                 />
                 <label htmlFor="edit-qty" className="floating-label absolute left-4 top-5 font-body-md text-body-md text-outline transition-all duration-200 pointer-events-none">
                   Quantity <span className="text-error">*</span>
@@ -111,16 +132,12 @@ export function EditInwardModal({
 
               <div className="space-y-2 relative">
                 <div className="relative group pt-2">
-                  <select 
+                  <select
                     className="glass-input floating-input w-full rounded-xl py-3 px-4 font-body-md text-body-md text-on-surface focus:outline-none appearance-none"
-                    value={unitId}
-                    onChange={(e) => setUnitId(e.target.value)}
-                    required
+                    value={unitId} onChange={(e) => setUnitId(e.target.value)} required
                   >
                     <option value="" disabled hidden>-- Choose Unit --</option>
-                    {units?.map(u => (
-                      <option key={u.id} value={u.id}>{u.name}</option>
-                    ))}
+                    {units?.map(u => (<option key={u.id} value={u.id}>{u.name}</option>))}
                   </select>
                   <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-outline group-hover:text-primary transition-colors">
                     <span className="material-symbols-outlined mt-2">expand_more</span>
@@ -135,10 +152,8 @@ export function EditInwardModal({
                 <input
                   type="text"
                   className="glass-input floating-input w-full rounded-xl py-3 pl-12 pr-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent"
-                  value={lotNumber}
-                  onChange={(e) => setLotNumber(e.target.value)}
-                  placeholder="Lot Number"
-                  id="edit-lot"
+                  value={lotNumber} onChange={(e) => setLotNumber(e.target.value)}
+                  placeholder="Lot Number" id="edit-lot"
                 />
                 <label htmlFor="edit-lot" className="floating-label absolute left-12 top-5 font-body-md text-body-md text-outline transition-all duration-200 pointer-events-none">
                   Lot / Reference No.
@@ -152,9 +167,7 @@ export function EditInwardModal({
                 <input
                   type="date"
                   className="glass-input floating-input w-full rounded-xl py-3 pl-12 pr-4 font-body-md text-body-md text-on-surface focus:outline-none"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  required
+                  value={date} onChange={(e) => setDate(e.target.value)} required
                 />
                 <label className="absolute left-12 -top-0.5 bg-surface/80 px-1 font-body-sm text-body-sm text-primary transition-all duration-200 pointer-events-none scale-85">
                   Date Received <span className="text-error">*</span>
@@ -172,14 +185,11 @@ export function EditInwardModal({
                   <span className="material-symbols-outlined text-tertiary mr-2 text-[18px]">add_circle</span>
                   Additional Specifications
                 </h3>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2 relative pt-2">
-                    <select 
+                    <select
                       className="glass-input floating-input w-full rounded-xl py-3 px-4 font-body-md text-body-md text-on-surface focus:outline-none appearance-none"
-                      value={machineType}
-                      onChange={(e) => setMachineType(e.target.value as 'MG'|'BG')}
-                      required
+                      value={machineType} onChange={(e) => setMachineType(e.target.value as 'MG'|'BG')} required
                     >
                       <option value="" disabled hidden></option>
                       <option value="MG">MG (Meter Gauge)</option>
@@ -196,10 +206,9 @@ export function EditInwardModal({
                   {isCover && (
                     <>
                       <div className="space-y-2 relative pt-2">
-                        <select 
+                        <select
                           className="glass-input floating-input w-full rounded-xl py-3 px-4 font-body-md text-body-md text-on-surface focus:outline-none appearance-none"
-                          value={coverType}
-                          onChange={(e) => setCoverType(e.target.value as 'RC'|'FC')}
+                          value={coverType} onChange={(e) => setCoverType(e.target.value as 'RC'|'FC')}
                         >
                           <option value="">Any / Not Specific</option>
                           <option value="RC">Rear Cover (RC)</option>
@@ -212,35 +221,22 @@ export function EditInwardModal({
                           <span className="material-symbols-outlined">expand_more</span>
                         </div>
                       </div>
-
                       <div className="col-span-1 md:col-span-2 grid grid-cols-2 gap-6">
                         <div className="space-y-2 relative pt-2">
-                          <input 
-                            type="number"
-                            min="0"
+                          <input type="number" min="0"
                             className="glass-input floating-input w-full rounded-xl py-3 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent"
-                            value={rcCount}
-                            onChange={(e) => setRcCount(e.target.value)}
-                            placeholder="RC Count"
-                            id="edit-rc-count"
+                            value={rcCount} onChange={(e) => setRcCount(e.target.value)}
+                            placeholder="RC Count" id="edit-rc-count"
                           />
-                          <label htmlFor="edit-rc-count" className="floating-label absolute left-4 top-5 font-body-md text-body-md text-outline transition-all duration-200 pointer-events-none">
-                            RC Count (Optional)
-                          </label>
+                          <label htmlFor="edit-rc-count" className="floating-label absolute left-4 top-5 font-body-md text-body-md text-outline transition-all duration-200 pointer-events-none">RC Count (Optional)</label>
                         </div>
                         <div className="space-y-2 relative pt-2">
-                          <input 
-                            type="number"
-                            min="0"
+                          <input type="number" min="0"
                             className="glass-input floating-input w-full rounded-xl py-3 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent"
-                            value={fcCount}
-                            onChange={(e) => setFcCount(e.target.value)}
-                            placeholder="FC Count"
-                            id="edit-fc-count"
+                            value={fcCount} onChange={(e) => setFcCount(e.target.value)}
+                            placeholder="FC Count" id="edit-fc-count"
                           />
-                          <label htmlFor="edit-fc-count" className="floating-label absolute left-4 top-5 font-body-md text-body-md text-outline transition-all duration-200 pointer-events-none">
-                            FC Count (Optional)
-                          </label>
+                          <label htmlFor="edit-fc-count" className="floating-label absolute left-4 top-5 font-body-md text-body-md text-outline transition-all duration-200 pointer-events-none">FC Count (Optional)</label>
                         </div>
                       </div>
                     </>
@@ -252,23 +248,15 @@ export function EditInwardModal({
         </div>
         
         <div className="px-6 py-4 border-t border-outline-variant/20 flex justify-end flex-shrink-0 space-x-3 bg-surface/50">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-6 py-2 text-label-md font-label-md text-on-surface bg-white border border-outline-variant/30 rounded-xl hover:bg-surface-variant/30 transition-colors"
-          >
+          <button type="button" onClick={onClose} className="px-6 py-2 text-label-md font-label-md text-on-surface bg-white border border-outline-variant/30 rounded-xl hover:bg-surface-variant/30 transition-colors">
             Cancel
           </button>
-          <button
-            type="submit"
-            form="edit-inward-form"
-            disabled={isSaving}
-            className="px-6 py-2 text-label-md font-label-md text-white bg-primary rounded-xl hover:bg-primary/90 focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors disabled:opacity-50 shadow-md hover:shadow-lg flex items-center"
-          >
+          <button type="submit" form="edit-inward-form" disabled={isSaving} className="px-6 py-2 text-label-md font-label-md text-white bg-primary rounded-xl hover:bg-primary/90 focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors disabled:opacity-50 shadow-md hover:shadow-lg flex items-center">
             {isSaving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -9,6 +9,8 @@ import { Dashboard } from './pages/Dashboard';
 import { InwardEntry } from './pages/InwardEntry';
 import { OutwardEntry } from './pages/OutwardEntry';
 import { AdminSettings } from './pages/AdminSettings';
+import { BvpScrapPosition } from './pages/BvpScrapPosition';
+import { TotalScrapPosition } from './pages/TotalScrapPosition';
 import { AuthProvider } from './components/AuthProvider';
 
 export default function App() {
@@ -20,6 +22,8 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/inward" element={<InwardEntry />} />
             <Route path="/outward" element={<OutwardEntry />} />
+            <Route path="/total-scrap" element={<TotalScrapPosition />} />
+            <Route path="/bvp-scrap" element={<BvpScrapPosition />} />
             <Route path="/admin" element={<AdminSettings />} />
           </Routes>
         </Layout>

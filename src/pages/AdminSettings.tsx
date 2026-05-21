@@ -10,10 +10,12 @@ export function AdminSettings() {
 
   const [newItemName, setNewItemName] = useState('');
   const [newCategoryId, setNewCategoryId] = useState('');
+  const [newItemHsn, setNewItemHsn] = useState('');
   
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [editItemName, setEditItemName] = useState('');
   const [editCategoryId, setEditCategoryId] = useState('');
+  const [editItemHsn, setEditItemHsn] = useState('');
 
   const [newUnitName, setNewUnitName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -33,9 +35,11 @@ export function AdminSettings() {
     if (!newItemName || !newCategoryId) return;
     await db.items.add({
       name: newItemName,
-      categoryId: Number(newCategoryId)
+      categoryId: Number(newCategoryId),
+      hsnCode: newItemHsn || undefined
     });
     setNewItemName('');
+    setNewItemHsn('');
   };
 
   const handleDeleteItem = async (id: number) => {
@@ -49,6 +53,7 @@ export function AdminSettings() {
     setEditingItemId(item.id);
     setEditItemName(item.name);
     setEditCategoryId(item.categoryId.toString());
+    setEditItemHsn(item.hsnCode || '');
   };
 
   const handleUpdateItem = async (e: React.FormEvent) => {
@@ -57,7 +62,8 @@ export function AdminSettings() {
     
     await db.items.update(editingItemId, {
       name: editItemName,
-      categoryId: Number(editCategoryId)
+      categoryId: Number(editCategoryId),
+      hsnCode: editItemHsn || undefined
     });
     setEditingItemId(null);
   };
@@ -200,8 +206,8 @@ export function AdminSettings() {
             </div>
             
             <div className="p-6 border-b border-outline-variant/10 bg-white/40">
-              <form onSubmit={handleAddItem} className="flex flex-col sm:flex-row gap-4 items-start sm:items-end">
-                <div className="flex-1 space-y-1 w-full">
+              <form onSubmit={handleAddItem} className="flex flex-col sm:flex-row gap-4 items-start sm:items-end flex-wrap">
+                <div className="flex-1 space-y-1 w-full min-w-[140px]">
                   <label className="text-xs font-label-md text-on-surface-variant">Item Name</label>
                   <input 
                     type="text" 
@@ -210,6 +216,17 @@ export function AdminSettings() {
                     onChange={(e) => setNewItemName(e.target.value)}
                     placeholder="e.g. Broken Glass"
                     required
+                  />
+                </div>
+                <div className="w-full sm:w-28 space-y-1">
+                  <label className="text-xs font-label-md text-on-surface-variant">HSN Code</label>
+                  <input 
+                    type="text" 
+                    maxLength={8}
+                    className="glass-input w-full rounded-xl py-2.5 px-3 font-data-mono text-on-surface focus:outline-none"
+                    value={newItemHsn}
+                    onChange={(e) => setNewItemHsn(e.target.value.replace(/\D/g, ''))}
+                    placeholder="8-digit"
                   />
                 </div>
                 <div className="w-full sm:w-1/3 space-y-1 relative">
@@ -248,14 +265,24 @@ export function AdminSettings() {
                 if (editingItemId === item.id) {
                   return (
                     <div key={item.id} className="p-3 border border-primary/30 rounded-xl bg-primary/5 shadow-sm">
-                      <form onSubmit={handleUpdateItem} className="flex flex-col sm:flex-row gap-2">
-                        <div className="flex-1">
+                      <form onSubmit={handleUpdateItem} className="flex flex-col sm:flex-row gap-2 flex-wrap">
+                        <div className="flex-1 min-w-[120px]">
                           <input 
                             type="text" 
                             className="glass-input w-full rounded-lg py-1.5 px-3 font-body-sm text-body-sm focus:outline-none focus:ring-1 focus:ring-primary/50 bg-white"
                             value={editItemName}
                             onChange={(e) => setEditItemName(e.target.value)}
                             required
+                          />
+                        </div>
+                        <div className="w-24">
+                          <input 
+                            type="text"
+                            maxLength={8}
+                            className="glass-input w-full rounded-lg py-1.5 px-3 font-data-mono text-body-sm focus:outline-none focus:ring-1 focus:ring-primary/50 bg-white"
+                            value={editItemHsn}
+                            onChange={(e) => setEditItemHsn(e.target.value.replace(/\D/g, ''))}
+                            placeholder="HSN"
                           />
                         </div>
                         <div className="sm:w-1/3">
@@ -286,18 +313,25 @@ export function AdminSettings() {
 
                 return (
                   <div key={item.id} className="flex items-center justify-between p-3 border border-outline-variant/20 rounded-xl bg-white/60 hover:bg-white hover:shadow-sm transition-all group">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center bg-surface-variant text-on-surface-variant font-data-mono text-xs font-bold">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center bg-surface-variant text-on-surface-variant font-data-mono text-xs font-bold">
                         {item.name.substring(0, 2).toUpperCase()}
                       </div>
-                      <div>
-                        <div className="font-label-md text-label-md text-on-surface">{item.name}</div>
-                        {cat && (
-                          <div className="text-[10px] text-outline font-medium flex items-center">
-                             <span className="material-symbols-outlined text-[12px] mr-0.5">sell</span>
-                             {cat.name}
-                          </div>
-                        )}
+                      <div className="min-w-0">
+                        <div className="font-label-md text-label-md text-on-surface truncate">{item.name}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {cat && (
+                            <div className="text-[10px] text-outline font-medium flex items-center">
+                               <span className="material-symbols-outlined text-[12px] mr-0.5">sell</span>
+                               {cat.name}
+                            </div>
+                          )}
+                          {item.hsnCode && (
+                            <div className="text-[10px] text-blue-600 font-mono bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                              HSN: {item.hsnCode}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">

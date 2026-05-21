@@ -18,6 +18,7 @@ export function InwardEntry() {
   const [coverType, setCoverType] = useState<'RC' | 'FC' | ''>('');
   const [rcCount, setRcCount] = useState<string>('');
   const [fcCount, setFcCount] = useState<string>('');
+  const [weightPerNos, setWeightPerNos] = useState<string>('');
 
   const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
 
@@ -30,6 +31,18 @@ export function InwardEntry() {
     if (!selectedItem || !categories) return null;
     return categories.find(c => c.id === selectedItem.categoryId) || null;
   }, [selectedItem, categories]);
+
+  const selectedUnitName = useMemo(() => {
+    if (!unitId || !units) return '';
+    return units.find(u => u.id === Number(unitId))?.name || '';
+  }, [unitId, units]);
+
+  const isNosUnit = selectedUnitName === 'Nos';
+
+  const calcWeightMT = () => {
+    if (!isNosUnit || !quantity || !weightPerNos) return null;
+    return ((Number(quantity) * Number(weightPerNos)) / 1000).toFixed(3);
+  };
 
   if (!items || !categories || !units) return null;
 
@@ -55,6 +68,7 @@ export function InwardEntry() {
         coverType: coverType ? coverType as 'RC' | 'FC' : undefined,
         rcCount: rcCount ? Number(rcCount) : undefined,
         fcCount: fcCount ? Number(fcCount) : undefined,
+        weightPerNos: weightPerNos ? Number(weightPerNos) : undefined,
       });
 
       setStatus({ type: 'success', msg: 'Inward entry recorded successfully.' });
@@ -65,6 +79,7 @@ export function InwardEntry() {
       setCoverType('');
       setRcCount('');
       setFcCount('');
+      setWeightPerNos('');
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
       setStatus({ type: 'error', msg: 'Failed to record entry.' });
@@ -171,6 +186,46 @@ export function InwardEntry() {
                 </label>
               </div>
             </div>
+
+            {/* NOS Weight Calculator */}
+            {isNosUnit && (
+              <div className="col-span-1 md:col-span-2 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <h4 className="text-xs font-semibold text-amber-700 mb-3 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px]">calculate</span>
+                  NOS Weight Calculator <span className="text-amber-500 font-normal">(optional)</span>
+                </h4>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex-1 min-w-[160px] relative pt-2">
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      className="glass-input floating-input w-full rounded-xl py-2.5 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent border-amber-300"
+                      value={weightPerNos}
+                      onChange={(e) => setWeightPerNos(e.target.value)}
+                      placeholder="Weight per 1 NOS"
+                      id="inward-wt-nos"
+                    />
+                    <label htmlFor="inward-wt-nos" className="floating-label absolute left-4 top-4 font-body-sm text-body-sm text-amber-600 transition-all duration-200 pointer-events-none">
+                      Weight per 1 NOS (Kg)
+                    </label>
+                  </div>
+                  {calcWeightMT() && (
+                    <div className="flex items-center gap-2 bg-white border border-emerald-300 rounded-lg px-4 py-2">
+                      <span className="material-symbols-outlined text-emerald-600 text-[18px]">scale</span>
+                      <span className="text-sm font-bold text-emerald-700">≈ {calcWeightMT()} MT</span>
+                      <span className="text-xs text-outline">({quantity} × {weightPerNos} Kg ÷ 1000)</span>
+                    </div>
+                  )}
+                  {!weightPerNos && (
+                    <p className="text-xs text-amber-600 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">info</span>
+                      Leave blank if unknown — update later from records
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Lot Number */}
             <div className="space-y-2 relative pt-2">
