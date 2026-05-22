@@ -1557,5 +1557,276 @@
   .login-industrial-deco {
     display: none;
   }
+
+  .login-typewriter-wrap {
+    display: none;
+  }
 }
 
+/* ── Scanning Beam Effect ─────────────────────────────────────────────────── */
+.login-scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.4), rgba(16, 185, 129, 0.3), transparent);
+  z-index: 2;
+  animation: scanBeam 4s ease-in-out infinite;
+  filter: blur(1px);
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
+}
+
+@keyframes scanBeam {
+  0%, 100% { top: -2px; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* ── Orbiting Dot around Logo ─────────────────────────────────────────────── */
+.login-orbit-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #67e8f9;
+  border-radius: 50%;
+  box-shadow: 0 0 12px #67e8f9, 0 0 24px rgba(103, 232, 249, 0.4);
+  animation: orbitDot 4s linear infinite;
+  offset-path: circle(45px);
+  offset-distance: 0%;
+}
+
+@keyframes orbitDot {
+  0% { offset-distance: 0%; }
+  100% { offset-distance: 100%; }
+}
+
+/* Fallback for browsers without offset-path */
+@supports not (offset-path: circle(45px)) {
+  .login-orbit-dot {
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    animation: orbitDotFallback 4s linear infinite;
+  }
+  @keyframes orbitDotFallback {
+    0% { transform: rotate(0deg) translateX(45px) rotate(0deg); }
+    100% { transform: rotate(360deg) translateX(45px) rotate(-360deg); }
+  }
+}
+
+/* ── Typewriter ───────────────────────────────────────────────────────────── */
+.login-typewriter-wrap {
+  height: 28px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.login-typewriter-text {
+  font-size: 15px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.75);
+  letter-spacing: 0.02em;
+}
+
+.login-typewriter-cursor {
+  font-size: 18px;
+  font-weight: 300;
+  color: #67e8f9;
+  animation: cursorBlink 0.7s step-end infinite;
+  margin-left: 2px;
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ── Glowing Card Border ──────────────────────────────────────────────────── */
+.login-card-glow-border {
+  position: absolute;
+  inset: -1px;
+  border-radius: 22px;
+  z-index: -1;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    rgba(59, 130, 246, 0.5) 10%,
+    transparent 20%,
+    transparent 40%,
+    rgba(16, 185, 129, 0.4) 50%,
+    transparent 60%,
+    transparent 80%,
+    rgba(139, 92, 246, 0.4) 90%,
+    transparent 100%
+  );
+  animation: glowBorderSpin 6s linear infinite;
+  filter: blur(3px);
+  opacity: 0.6;
+}
+
+@keyframes glowBorderSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.login-form-card {
+  position: relative;
+  z-index: 1;
+  background: rgba(8, 12, 30, 0.92);
+  padding: 36px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ── Brand border glow ────────────────────────────────────────────────────── */
+.login-brand-border-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.login-brand-border-glow::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(
+    from 180deg,
+    transparent 0%,
+    rgba(255,255,255,0.05) 25%,
+    transparent 50%
+  );
+  animation: brandGlowSpin 10s linear infinite;
+}
+
+@keyframes brandGlowSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ── Security badge pulse ─────────────────────────────────────────────────── */
+.login-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #34d399;
+  display: inline-block;
+  animation: badgeDotPulse 2s ease-in-out infinite;
+  box-shadow: 0 0 6px #34d399;
+}
+
+@keyframes badgeDotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.7); }
+}
+
+/* ── Animated Input Line ──────────────────────────────────────────────────── */
+.login-input-line {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4);
+  border-radius: 2px;
+  transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translateX(-50%);
+}
+
+.login-input:focus ~ .login-input-line {
+  width: 100%;
+}
+
+.login-field-focused .login-field-label {
+  color: #93c5fd !important;
+}
+
+/* ── Button Shimmer ───────────────────────────────────────────────────────── */
+.login-btn-shimmer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.login-btn-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  animation: shimmerSlide 3s ease-in-out infinite;
+}
+
+@keyframes shimmerSlide {
+  0% { left: -100%; }
+  50% { left: 150%; }
+  100% { left: 150%; }
+}
+
+.login-btn-text {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Fingerprint Section ──────────────────────────────────────────────────── */
+.login-fingerprint-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255,255,255,0.04);
+}
+
+.login-fingerprint-icon {
+  position: relative;
+  color: rgba(59, 130, 246, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-fingerprint-pulse {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(59, 130, 246, 0.15);
+  animation: fingerprintPulse 2.5s ease-out infinite;
+}
+
+@keyframes fingerprintPulse {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+.login-fingerprint-text {
+  font-size: 11px;
+  color: #475569;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+/* ── Enhanced Submit Button ───────────────────────────────────────────────── */
+.login-submit-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.login-submit-btn:hover .login-btn-arrow {
+  transform: translateX(6px);
+}
+
+.login-submit-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}

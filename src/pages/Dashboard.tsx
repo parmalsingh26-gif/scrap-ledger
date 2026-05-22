@@ -184,8 +184,14 @@ export function Dashboard() {
         ? autoBalances.map(b => `${b.balance} ${b.unit}`).join(' | ')
         : '';
 
-      // Clean sheet name (Excel limits to 31 chars and no special chars like [])
-      const safeSheetName = item.name.replace(/[\\/?*\[\]]/g, '').substring(0, 31);
+      // Clean sheet name (Excel limits to 31 chars, no special chars)
+      // Remove all chars invalid in Excel sheet names: \ / ? * [ ] : and trim
+      let safeSheetName = item.name.replace(/[\\/?*\[\]:]/g, '').trim().substring(0, 31).trim();
+      // Ensure no duplicate sheet names
+      const existingNames = workbook.worksheets.map(ws => ws.name);
+      if (existingNames.includes(safeSheetName)) {
+        safeSheetName = safeSheetName.substring(0, 28) + `_${sno}`;
+      }
       
       // Add Row to Index
       // In index: show auto-balance if available, else manual balance, else '-'
@@ -202,7 +208,7 @@ export function Dashboard() {
         if (colNumber === 2 || colNumber === 7) {
           cell.value = {
             text: colNumber === 2 ? item.name : 'View Sheet ➡️',
-            hyperlink: `#${safeSheetName}!A1`,
+            hyperlink: `#'${safeSheetName}'!A1`,
             tooltip: `Go to ${item.name} sheet`
           };
           cell.font = { name: 'Arial', size: 11, color: { argb: accentColor }, underline: true, bold: true };
@@ -220,7 +226,7 @@ export function Dashboard() {
       // Back to Index link
       itemSheet.mergeCells('A1:G1');
       const backCell = itemSheet.getCell('A1');
-      backCell.value = { text: '⬅ Back to Index', hyperlink: `#Index!A1` };
+      backCell.value = { text: '⬅ Back to Index', hyperlink: `#'Index'!A1` };
       backCell.font = { name: 'Arial', size: 12, color: { argb: accentColor }, underline: true, italic: true };
       backCell.alignment = { vertical: 'middle' };
       itemSheet.getRow(1).height = 25;
