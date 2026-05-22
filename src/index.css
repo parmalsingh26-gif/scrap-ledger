@@ -1563,25 +1563,7 @@
   }
 }
 
-/* ── Scanning Beam Effect ─────────────────────────────────────────────────── */
-.login-scan-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.4), rgba(16, 185, 129, 0.3), transparent);
-  z-index: 2;
-  animation: scanBeam 4s ease-in-out infinite;
-  filter: blur(1px);
-  box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
-}
 
-@keyframes scanBeam {
-  0%, 100% { top: -2px; opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { top: 100%; opacity: 0; }
-}
 
 /* ── Orbiting Dot around Logo ─────────────────────────────────────────────── */
 .login-orbit-dot {
@@ -1642,73 +1624,7 @@
   50% { opacity: 0; }
 }
 
-/* ── Glowing Card Border ──────────────────────────────────────────────────── */
-.login-card-glow-border {
-  position: absolute;
-  inset: -1px;
-  border-radius: 22px;
-  z-index: -1;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0%,
-    rgba(59, 130, 246, 0.5) 10%,
-    transparent 20%,
-    transparent 40%,
-    rgba(16, 185, 129, 0.4) 50%,
-    transparent 60%,
-    transparent 80%,
-    rgba(139, 92, 246, 0.4) 90%,
-    transparent 100%
-  );
-  animation: glowBorderSpin 6s linear infinite;
-  filter: blur(3px);
-  opacity: 0.6;
-}
 
-@keyframes glowBorderSpin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.login-form-card {
-  position: relative;
-  z-index: 1;
-  background: rgba(8, 12, 30, 0.92);
-  padding: 36px;
-  border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.06);
-}
-
-/* ── Brand border glow ────────────────────────────────────────────────────── */
-.login-brand-border-glow {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-radius: inherit;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.login-brand-border-glow::after {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: conic-gradient(
-    from 180deg,
-    transparent 0%,
-    rgba(255,255,255,0.05) 25%,
-    transparent 50%
-  );
-  animation: brandGlowSpin 10s linear infinite;
-}
-
-@keyframes brandGlowSpin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
 
 /* ── Security badge pulse ─────────────────────────────────────────────────── */
 .login-badge-dot {
@@ -1724,6 +1640,16 @@
 @keyframes badgeDotPulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.5; transform: scale(0.7); }
+}
+
+/* ── Form Card ────────────────────────────────────────────────────────────── */
+.login-form-card {
+  position: relative;
+  z-index: 1;
+  background: rgba(8, 12, 30, 0.92);
+  padding: 36px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.06);
 }
 
 /* ── Animated Input Line ──────────────────────────────────────────────────── */

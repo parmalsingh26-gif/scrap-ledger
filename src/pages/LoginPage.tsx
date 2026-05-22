@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../components/AuthProvider';
 
-// ─── Particle Network Canvas ─────────────────────────────────────────────────
+// ─── Antigravity-style Interactive Particle Canvas ───────────────────────────
 function FloatingParticles({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasElement | null> }) {
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -10,57 +10,129 @@ function FloatingParticles({ canvasRef }: { canvasRef: React.RefObject<HTMLCanva
     if (!ctx) return;
 
     let animationId: number;
-    let mouse = { x: -999, y: -999 };
-    let particles: Array<{
-      x: number; y: number; vx: number; vy: number;
-      size: number; opacity: number; color: string; baseSize: number;
-    }> = [];
+    let W = 0, H = 0;
 
-    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#22d3ee', '#ec4899'];
+    // Smooth mouse with lerp
+    const mouse = { x: -9999, y: -9999, targetX: -9999, targetY: -9999, active: false };
+    const MOUSE_RADIUS = 200;
+    const CONNECT_DIST = 160;
+    const MOUSE_CONNECT_DIST = 250;
+
+    interface Particle {
+      x: number; y: number;
+      originX: number; originY: number;
+      vx: number; vy: number;
+      size: number; baseSize: number;
+      opacity: number; baseOpacity: number;
+      hue: number;
+    }
+
+    let particles: Particle[] = [];
+
+    // Trail points for the cursor
+    let trail: Array<{ x: number; y: number; age: number }> = [];
 
     const resize = () => {
-      canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-      canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      const dpr = window.devicePixelRatio || 1;
+      W = canvas.offsetWidth;
+      H = canvas.offsetHeight;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
     const initParticles = () => {
       particles = [];
-      const count = Math.min(90, Math.floor((canvas.offsetWidth * canvas.offsetHeight) / 7000));
+      const count = Math.min(100, Math.floor((W * H) / 6000));
       for (let i = 0; i < count; i++) {
-        const s = Math.random() * 2.5 + 0.8;
+        const x = Math.random() * W;
+        const y = Math.random() * H;
         particles.push({
-          x: Math.random() * canvas.offsetWidth,
-          y: Math.random() * canvas.offsetHeight,
-          vx: (Math.random() - 0.5) * 0.4,
-          vy: (Math.random() - 0.5) * 0.4,
-          size: s, baseSize: s,
-          opacity: Math.random() * 0.5 + 0.15,
-          color: colors[Math.floor(Math.random() * colors.length)],
+          x, y,
+          originX: x, originY: y,
+          vx: (Math.random() - 0.5) * 0.3,
+          vy: (Math.random() - 0.5) * 0.3,
+          size: Math.random() * 2 + 1,
+          baseSize: Math.random() * 2 + 1,
+          opacity: Math.random() * 0.4 + 0.1,
+          baseOpacity: Math.random() * 0.4 + 0.1,
+          hue: Math.random() * 60 + 200, // blue-cyan-purple range
         });
       }
     };
 
-    const hexToRgba = (hex: string, alpha: number) => {
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    };
-
     const animate = () => {
-      ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight);
+      // Smooth mouse lerp
+      mouse.x += (mouse.targetX - mouse.x) * 0.12;
+      mouse.y += (mouse.targetY - mouse.y) * 0.12;
 
-      // Draw connections
+      // Fade trail (don't clear fully — creates subtle motion blur)
+      ctx.fillStyle = 'rgba(10, 14, 39, 0.15)';
+      ctx.fillRect(0, 0, W, H);
+
+      // ── Draw cursor glow halo ──
+      if (mouse.active) {
+        // Outer soft halo
+        const grad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, MOUSE_RADIUS);
+        grad.addColorStop(0, 'rgba(59, 130, 246, 0.06)');
+        grad.addColorStop(0.4, 'rgba(99, 102, 241, 0.03)');
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.fillRect(mouse.x - MOUSE_RADIUS, mouse.y - MOUSE_RADIUS, MOUSE_RADIUS * 2, MOUSE_RADIUS * 2);
+
+        // Inner bright point
+        const innerGrad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 30);
+        innerGrad.addColorStop(0, 'rgba(147, 197, 253, 0.15)');
+        innerGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = innerGrad;
+        ctx.beginPath();
+        ctx.arc(mouse.x, mouse.y, 30, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Update trail
+        trail.push({ x: mouse.x, y: mouse.y, age: 0 });
+        if (trail.length > 20) trail.shift();
+      }
+
+      // ── Draw cursor trail ──
+      if (trail.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(trail[0].x, trail[0].y);
+        for (let i = 1; i < trail.length; i++) {
+          const t = trail[i];
+          ctx.lineTo(t.x, t.y);
+        }
+        ctx.strokeStyle = 'rgba(147, 197, 253, 0.08)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Age out trail
+        trail.forEach(t => t.age++);
+        trail = trail.filter(t => t.age < 25);
+      }
+
+      // ── Draw connections between particles ──
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const dx = particles[i].x - particles[j].x;
           const dy = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 130) {
+          if (dist < CONNECT_DIST) {
+            const alpha = 0.06 * (1 - dist / CONNECT_DIST);
+
+            // Brighter connections near mouse
+            let boost = 1;
+            if (mouse.active) {
+              const midX = (particles[i].x + particles[j].x) / 2;
+              const midY = (particles[i].y + particles[j].y) / 2;
+              const mDist = Math.sqrt((midX - mouse.x) ** 2 + (midY - mouse.y) ** 2);
+              if (mDist < MOUSE_RADIUS) {
+                boost = 1 + 3 * (1 - mDist / MOUSE_RADIUS);
+              }
+            }
+
             ctx.beginPath();
-            ctx.strokeStyle = `rgba(100, 160, 255, ${0.07 * (1 - dist / 130)})`;
-            ctx.lineWidth = 0.6;
+            ctx.strokeStyle = `rgba(100, 160, 255, ${Math.min(alpha * boost, 0.35)})`;
+            ctx.lineWidth = 0.5 + boost * 0.3;
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
             ctx.stroke();
@@ -68,44 +140,82 @@ function FloatingParticles({ canvasRef }: { canvasRef: React.RefObject<HTMLCanva
         }
       }
 
-      // Draw & move particles, react to mouse
-      particles.forEach(p => {
-        const dx = p.x - mouse.x;
-        const dy = p.y - mouse.y;
-        const mouseDist = Math.sqrt(dx * dx + dy * dy);
+      // ── Draw connections from mouse to nearby particles ──
+      if (mouse.active) {
+        particles.forEach(p => {
+          const dx = p.x - mouse.x;
+          const dy = p.y - mouse.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < MOUSE_CONNECT_DIST) {
+            const alpha = 0.12 * (1 - dist / MOUSE_CONNECT_DIST);
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(147, 197, 253, ${alpha})`;
+            ctx.lineWidth = 0.8;
+            ctx.moveTo(mouse.x, mouse.y);
+            ctx.lineTo(p.x, p.y);
+            ctx.stroke();
+          }
+        });
+      }
 
-        // Repel from mouse
-        if (mouseDist < 100) {
-          const force = (100 - mouseDist) / 100;
-          p.vx += (dx / mouseDist) * force * 0.3;
-          p.vy += (dy / mouseDist) * force * 0.3;
-          p.size = p.baseSize * (1 + force * 1.5);
+      // ── Update and draw particles ──
+      particles.forEach(p => {
+        // Gravity towards mouse (attraction)
+        if (mouse.active) {
+          const dx = mouse.x - p.x;
+          const dy = mouse.y - p.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < MOUSE_RADIUS && dist > 0) {
+            const force = (MOUSE_RADIUS - dist) / MOUSE_RADIUS;
+            const strength = force * force * 0.5; // Quadratic for smooth gravity feel
+            p.vx += (dx / dist) * strength;
+            p.vy += (dy / dist) * strength;
+
+            // Grow & brighten near mouse
+            p.size += (p.baseSize * (1 + force * 2) - p.size) * 0.08;
+            p.opacity += (p.baseOpacity + force * 0.5 - p.opacity) * 0.08;
+          } else {
+            p.size += (p.baseSize - p.size) * 0.03;
+            p.opacity += (p.baseOpacity - p.opacity) * 0.03;
+          }
         } else {
-          p.size += (p.baseSize - p.size) * 0.05;
+          p.size += (p.baseSize - p.size) * 0.03;
+          p.opacity += (p.baseOpacity - p.opacity) * 0.03;
         }
 
-        // Dampen velocity
-        p.vx *= 0.99;
-        p.vy *= 0.99;
+        // Gentle return to origin (elastic)
+        p.vx += (p.originX - p.x) * 0.001;
+        p.vy += (p.originY - p.y) * 0.001;
 
+        // Friction
+        p.vx *= 0.96;
+        p.vy *= 0.96;
+
+        // Move
         p.x += p.vx;
         p.y += p.vy;
 
-        if (p.x < 0 || p.x > canvas.offsetWidth) p.vx *= -1;
-        if (p.y < 0 || p.y > canvas.offsetHeight) p.vy *= -1;
+        // Soft boundaries
+        if (p.x < 0) { p.x = 0; p.vx = Math.abs(p.vx) * 0.5; }
+        if (p.x > W) { p.x = W; p.vx = -Math.abs(p.vx) * 0.5; }
+        if (p.y < 0) { p.y = 0; p.vy = Math.abs(p.vy) * 0.5; }
+        if (p.y > H) { p.y = H; p.vy = -Math.abs(p.vy) * 0.5; }
 
+        // Draw glow
+        const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 4);
+        grd.addColorStop(0, `hsla(${p.hue}, 80%, 70%, ${p.opacity * 0.3})`);
+        grd.addColorStop(1, 'transparent');
+        ctx.fillStyle = grd;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = hexToRgba(p.color, p.opacity);
+        ctx.arc(p.x, p.y, p.size * 4, 0, Math.PI * 2);
         ctx.fill();
 
-        // Glow for bigger particles
-        if (p.size > 2) {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI * 2);
-          ctx.fillStyle = hexToRgba(p.color, p.opacity * 0.08);
-          ctx.fill();
-        }
+        // Draw core
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${p.hue}, 80%, 75%, ${p.opacity})`;
+        ctx.fill();
       });
 
       animationId = requestAnimationFrame(animate);
@@ -113,11 +223,29 @@ function FloatingParticles({ canvasRef }: { canvasRef: React.RefObject<HTMLCanva
 
     const handleMouseMove = (e: MouseEvent) => {
       const rect = canvas.getBoundingClientRect();
-      mouse.x = e.clientX - rect.left;
-      mouse.y = e.clientY - rect.top;
+      mouse.targetX = e.clientX - rect.left;
+      mouse.targetY = e.clientY - rect.top;
+      mouse.active = true;
     };
 
-    const handleMouseLeave = () => { mouse.x = -999; mouse.y = -999; };
+    const handleMouseLeave = () => {
+      mouse.active = false;
+      mouse.targetX = -9999;
+      mouse.targetY = -9999;
+      trail = [];
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.targetX = e.touches[0].clientX - rect.left;
+      mouse.targetY = e.touches[0].clientY - rect.top;
+      mouse.active = true;
+    };
+
+    const handleTouchEnd = () => {
+      mouse.active = false;
+      trail = [];
+    };
 
     resize();
     initParticles();
@@ -125,12 +253,16 @@ function FloatingParticles({ canvasRef }: { canvasRef: React.RefObject<HTMLCanva
 
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mouseleave', handleMouseLeave);
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: true });
+    canvas.addEventListener('touchend', handleTouchEnd);
     window.addEventListener('resize', () => { resize(); initParticles(); });
 
     return () => {
       cancelAnimationFrame(animationId);
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mouseleave', handleMouseLeave);
+      canvas.removeEventListener('touchmove', handleTouchMove);
+      canvas.removeEventListener('touchend', handleTouchEnd);
     };
   }, [canvasRef]);
 
@@ -220,9 +352,6 @@ export function LoginPage() {
     return date.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   };
 
-  // Seconds for the scanning line animation
-  const seconds = currentTime.getSeconds();
-
   return (
     <div className={`login-page ${successAnim ? 'login-success-exit' : ''}`}>
       {/* Animated Background */}
@@ -238,17 +367,12 @@ export function LoginPage() {
 
         {/* Grid pattern overlay */}
         <div className="login-grid-pattern"></div>
-
-        {/* Scanning beam effect */}
-        <div className="login-scan-line"></div>
       </div>
 
       {/* Main Content */}
       <div className="login-container">
         {/* Left side — Branding */}
         <div className="login-brand-side">
-          {/* Animated border glow */}
-          <div className="login-brand-border-glow"></div>
 
           <div className="login-brand-content">
             {/* Animated Logo */}
@@ -318,8 +442,6 @@ export function LoginPage() {
         <div className="login-form-side">
           {/* Animated glow border around form */}
           <div className={`login-form-card ${shake ? 'login-shake' : ''}`}>
-            {/* Glowing border animation */}
-            <div className="login-card-glow-border"></div>
 
             {/* Security badge */}
             <div className="login-security-badge">
