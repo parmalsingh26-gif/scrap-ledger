@@ -696,22 +696,44 @@ export function Dashboard() {
                               <span className="text-xs text-outline font-medium bg-white px-2 py-1 rounded border border-outline-variant/10">{(entry as any).lotNumber || 'No Lot'}</span>
                             </div>
 
-                            <div className="mt-2 text-xs text-on-surface-variant">
+                            <div className="mt-2 text-xs text-on-surface-variant space-y-1">
                                {isIdxOutward ? (
                                  <>
-                                   <p>Buyer: {(entry as any).firmName}</p>
-                                   <p className="text-[11px] mt-0.5 flex items-center gap-1">
+                                   {(entry as any).firmName && <p><span className="text-outline">Buyer:</span> <span className="font-medium">{(entry as any).firmName}</span></p>}
+                                   {(entry as any).dateSold && <p><span className="text-outline">Date Sold:</span> <span className="font-medium">{(entry as any).dateSold}</span></p>}
+                                   <p className="flex items-center gap-1">
                                      <span className="text-outline">Lot Applied:</span>{' '}
                                      {(entry as any).dateLotApplied
                                        ? <span className="font-medium">{(entry as any).dateLotApplied}</span>
                                        : <span className="text-amber-500 font-semibold bg-amber-50 px-1.5 py-0.5 rounded text-[10px] border border-amber-200">Pending</span>}
                                    </p>
+                                   {(entry as any).weightPerNos && <p><span className="text-outline">Wt/Nos:</span> <span className="font-medium">{(entry as any).weightPerNos} Kg</span></p>}
                                  </>
                                ) : (
-                                 <p>
-                                   {(entry as any).machineType && <span>Source: {(entry as any).machineType} | </span>}
-                                   {(entry as any).coverType && <span>Cover: {(entry as any).coverType} </span>}
-                                 </p>
+                                 <>
+                                   {(entry as any).machineType && (
+                                     <p><span className="text-outline">Machine Type:</span> <span className="font-medium">{(entry as any).machineType}</span></p>
+                                   )}
+                                   {(entry as any).coverType && (
+                                     <p><span className="text-outline">Cover Type:</span> <span className="font-medium">{(entry as any).coverType}</span></p>
+                                   )}
+                                   {/* Show RC and FC counts separately when both present */}
+                                   {((entry as any).rcCount !== undefined && (entry as any).rcCount !== null && (entry as any).rcCount !== '') && (
+                                     <p>
+                                       <span className="text-outline">Rear Cover (RC):</span>{' '}
+                                       <span className="font-semibold text-blue-700">{(entry as any).rcCount} Nos</span>
+                                     </p>
+                                   )}
+                                   {((entry as any).fcCount !== undefined && (entry as any).fcCount !== null && (entry as any).fcCount !== '') && (
+                                     <p>
+                                       <span className="text-outline">Front Cover (FC):</span>{' '}
+                                       <span className="font-semibold text-purple-700">{(entry as any).fcCount} Nos</span>
+                                     </p>
+                                   )}
+                                   {(entry as any).weightPerNos && (
+                                     <p><span className="text-outline">Wt/Nos:</span> <span className="font-medium">{(entry as any).weightPerNos} Kg</span></p>
+                                   )}
+                                 </>
                                )}
                             </div>
 
