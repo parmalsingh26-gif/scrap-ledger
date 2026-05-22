@@ -16,7 +16,7 @@ const navItems = [
 
 export function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
-  const { isAdmin, logout, login } = useAuth();
+  const { isAdmin, logout, login, logoutApp } = useAuth();
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(true);
 
@@ -110,6 +110,13 @@ export function Layout({ children }: { children: ReactNode }) {
                 {isAdmin ? 'lock_open' : 'lock'}
               </span>
               <span>{isAdmin ? 'Lock Admin' : 'Unlock Admin'}</span>
+            </button>
+            <button 
+              onClick={() => { if(confirm('Are you sure you want to logout?')) logoutApp(); }}
+              className="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-error transition-all duration-200 hover:-translate-y-0.5 rounded-xl font-label-md text-label-md w-full text-left"
+            >
+              <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>power_settings_new</span>
+              <span>Logout</span>
             </button>
           </div>
         </div>

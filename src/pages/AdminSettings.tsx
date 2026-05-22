@@ -25,7 +25,12 @@ export function AdminSettings() {
   const [pinStatus, setPinStatus] = useState('');
   const [dbStatus, setDbStatus] = useState('');
   
-  const { updatePin } = useAuth();
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordStatus, setPasswordStatus] = useState('');
+  
+  const { updatePin, changePassword } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!items || !categories || !units) return null;
@@ -92,6 +97,27 @@ export function AdminSettings() {
        setTimeout(() => setPinStatus(''), 3000);
     } else {
        setPinStatus('Error: Old PIN is incorrect.');
+    }
+  };
+
+  const handleChangePassword = (e: any) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setPasswordStatus('Error: New passwords do not match.');
+      return;
+    }
+    if (newPassword.length < 4) {
+      setPasswordStatus('Error: Password must be at least 4 characters.');
+      return;
+    }
+    if (changePassword(oldPassword, newPassword)) {
+      setPasswordStatus('Login password updated successfully!');
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setPasswordStatus(''), 3000);
+    } else {
+      setPasswordStatus('Error: Current password is incorrect.');
     }
   };
 
@@ -461,6 +487,67 @@ export function AdminSettings() {
                     <div className="flex justify-end">
                       <button type="submit" className="bg-surface-variant hover:bg-outline-variant/40 text-on-surface border border-outline-variant/30 px-6 py-2.5 rounded-xl font-label-md text-label-md transition-colors shadow-sm">
                          Update PIN
+                      </button>
+                    </div>
+                 </form>
+              </div>
+            </div>
+
+            {/* Login Password Change Section */}
+            <div className="glass-panel rounded-2xl shadow-sm border border-outline-variant/20 overflow-hidden relative">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-primary-container/20 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+              <div className="px-6 py-4 border-b border-outline-variant/20 bg-surface-variant/30 flex items-center relative z-10">
+                 <span className="material-symbols-outlined mr-2 text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>key</span>
+                 <h3 className="font-headline-md text-[18px] text-on-surface">Change Login Password</h3>
+              </div>
+              <div className="p-6 relative z-10">
+                 <form onSubmit={handleChangePassword} className="space-y-5">
+                    {passwordStatus && (
+                       <div className={`p-3 text-label-md rounded-xl border backdrop-blur-md flex items-center ${passwordStatus.includes('Error') ? 'bg-error-container/20 text-error border-error/30' : 'bg-tertiary-container/20 text-tertiary border-tertiary/30'}`}>
+                          <span className="material-symbols-outlined mr-2 text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                            {passwordStatus.includes('Error') ? 'error' : 'check_circle'}
+                          </span>
+                          {passwordStatus}
+                       </div>
+                    )}
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-label-md text-on-surface-variant">Current Password</label>
+                        <input 
+                          type="password" 
+                          className="glass-input w-full rounded-xl py-2.5 px-4 font-body-md text-on-surface focus:outline-none"
+                          value={oldPassword}
+                          onChange={(e) => setOldPassword(e.target.value)}
+                          placeholder="Enter current password"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-label-md text-on-surface-variant">New Password</label>
+                        <input 
+                          type="password" 
+                          className="glass-input w-full rounded-xl py-2.5 px-4 font-body-md text-on-surface focus:outline-none"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Enter new password"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-label-md text-on-surface-variant">Confirm New Password</label>
+                        <input 
+                          type="password" 
+                          className="glass-input w-full rounded-xl py-2.5 px-4 font-body-md text-on-surface focus:outline-none"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="Confirm new password"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button type="submit" className="bg-primary hover:bg-primary/90 text-white px-6 py-2.5 rounded-xl font-label-md text-label-md transition-colors shadow-sm">
+                         Update Password
                       </button>
                     </div>
                  </form>

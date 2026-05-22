@@ -11,24 +11,36 @@ import { OutwardEntry } from './pages/OutwardEntry';
 import { AdminSettings } from './pages/AdminSettings';
 import { BvpScrapPosition } from './pages/BvpScrapPosition';
 import { TotalScrapPosition } from './pages/TotalScrapPosition';
-import { AuthProvider } from './components/AuthProvider';
+import { LoginPage } from './pages/LoginPage';
+import { AuthProvider, useAuth } from './components/AuthProvider';
+
+function AppContent() {
+  const { isLoggedIn } = useAuth();
+
+  if (!isLoggedIn) {
+    return <LoginPage />;
+  }
+
+  return (
+    <Router>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/inward" element={<InwardEntry />} />
+          <Route path="/outward" element={<OutwardEntry />} />
+          <Route path="/total-scrap" element={<TotalScrapPosition />} />
+          <Route path="/bvp-scrap" element={<BvpScrapPosition />} />
+          <Route path="/admin" element={<AdminSettings />} />
+        </Routes>
+      </Layout>
+    </Router>
+  );
+}
 
 export default function App() {
   return (
     <AuthProvider>
-      <Router>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/inward" element={<InwardEntry />} />
-            <Route path="/outward" element={<OutwardEntry />} />
-            <Route path="/total-scrap" element={<TotalScrapPosition />} />
-            <Route path="/bvp-scrap" element={<BvpScrapPosition />} />
-            <Route path="/admin" element={<AdminSettings />} />
-          </Routes>
-        </Layout>
-      </Router>
+      <AppContent />
     </AuthProvider>
   );
 }
-
