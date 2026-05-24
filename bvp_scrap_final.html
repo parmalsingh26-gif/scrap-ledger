@@ -1,0 +1,2085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>BVP Scrap Position System</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f4f6fb;--surface:#fff;--surface2:#f0f2f8;--surface3:#e8ebf5;
+  --text:#1a1d2e;--text2:#5a6070;--text3:#9299b0;
+  --border:rgba(0,0,0,0.08);--border2:rgba(0,0,0,0.14);
+  --accent:#185FA5;--accent-light:#E6F1FB;
+  --green:#1D9E75;--green-light:#E1F5EE;
+  --amber:#BA7517;--amber-light:#FAEEDA;
+  --red:#E24B4A;--red-light:#FCEBEB;
+  --gray:#888780;--gray-light:#F1EFE8;
+  --r:10px;--rl:14px;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#0d0f1a;--surface:#161926;--surface2:#1e2133;--surface3:#252840;
+    --text:#e4e8f6;--text2:#8890b0;--text3:#555e80;
+    --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
+    --accent-light:#0d2340;--green-light:#0a2e20;--amber-light:#2e1e05;--red-light:#2e0d0d;--gray-light:#1e1e1c;
+  }
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.6}
+.page{max-width:1280px;margin:0 auto;padding:20px 16px 60px}
+
+/* ===== TOP NAV TABS ===== */
+.top-nav{display:flex;gap:4px;margin-bottom:24px;background:var(--surface);border:0.5px solid var(--border);border-radius:var(--rl);padding:6px;flex-wrap:wrap}
+.top-nav button{flex:1;min-width:160px;padding:9px 18px;border:none;border-radius:var(--r);background:transparent;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;transition:all .18s;font-family:inherit}
+.top-nav button.active{background:var(--accent);color:#fff}
+.top-nav button:hover:not(.active){background:var(--surface2)}
+
+/* ===== SESSION BAR ===== */
+.session-bar{display:flex;align-items:center;gap:12px;background:var(--accent-light);border:0.5px solid var(--accent);border-radius:var(--r);padding:10px 16px;margin-bottom:20px;flex-wrap:wrap}
+.session-bar label{font-size:12px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em}
+.session-bar select{border:1.5px solid var(--accent);border-radius:6px;padding:4px 10px;font-size:13px;background:var(--surface);color:var(--text);font-family:inherit;cursor:pointer}
+.session-badge{background:var(--accent);color:#fff;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:600;margin-left:auto}
+
+/* ===== SECTION TABS ===== */
+.view{display:none}.view.active{display:block}
+
+/* ===== FORM STYLES ===== */
+.form-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--rl);padding:20px 22px;margin-bottom:16px}
+.form-card h3{font-size:15px;font-weight:600;color:var(--text);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.form-card h3 .icon{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group.full{grid-column:1/-1}
+.form-group.half{grid-column:span 2}
+label.fl{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
+input,select,textarea{border:0.5px solid var(--border2);border-radius:7px;padding:8px 11px;font-size:13px;background:var(--surface);color:var(--text);font-family:inherit;transition:border-color .15s,box-shadow .15s;width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(24,95,165,.12)}
+textarea{resize:vertical;min-height:72px}
+.auto-field{background:var(--surface2);color:var(--text2);font-weight:600}
+.btn{border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:.9}
+.btn-success{background:var(--green);color:#fff}.btn-success:hover{opacity:.9}
+.btn-danger{background:var(--red);color:#fff}.btn-danger:hover{opacity:.9}
+.btn-ghost{background:var(--surface2);color:var(--text2);border:0.5px solid var(--border)}.btn-ghost:hover{background:var(--surface3)}
+.btn-row{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;align-items:center}
+.required::after{content:" *";color:var(--red)}
+.hint{font-size:11px;color:var(--text3);margin-top:2px}
+.calc-badge{background:var(--green-light);color:var(--green);font-size:12px;padding:3px 10px;border-radius:6px;font-weight:600}
+
+/* ===== ENTRIES TABLE ===== */
+.entries-wrap{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--rl);overflow:hidden;margin-bottom:16px}
+.entries-header{padding:14px 18px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.entries-header h3{font-size:14px;font-weight:600}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{padding:9px 12px;text-align:left;color:var(--text3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:0.5px solid var(--border);white-space:nowrap;background:var(--surface2)}
+tbody td{padding:9px 12px;border-bottom:0.5px solid var(--border);color:var(--text);vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--surface2)}
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-sold{background:#EAF3DE;color:#3B6D11}
+.badge-auction{background:#FAEEDA;color:#854F0B}
+.badge-ns{background:#FCEBEB;color:#A32D2D}
+.badge-oa{background:var(--accent-light);color:var(--accent)}
+.badge-ua{background:var(--amber-light);color:var(--amber)}
+.del-btn{background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:4px}
+.del-btn:hover{background:var(--red-light)}
+.empty-state{padding:40px;text-align:center;color:var(--text3);font-size:13px}
+
+/* ===== DASHBOARD ===== */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.kpi{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--rl);padding:16px 18px;transition:transform .18s}
+.kpi:hover{transform:translateY(-2px)}
+.kpi-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.kpi-val{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-.5px}
+.kpi-trend{font-size:11px;margin-top:4px}.up{color:#3B6D11}.down{color:#A32D2D}.neutral{color:var(--text3)}
+.section-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin:24px 0 10px}
+.chart-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--rl);padding:18px 20px;margin-bottom:16px}
+.chart-card h4{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px}
+.chart-wrap{position:relative;width:100%}
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:10px;font-size:12px;color:var(--text2)}
+.ldot{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:4px;vertical-align:middle}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:640px){.two-col{grid-template-columns:1fr}}
+.tab-bar{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.tab-btn{background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--r);padding:5px 14px;font-size:12px;cursor:pointer;color:var(--text2);font-family:inherit;transition:all .15s}
+.tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.prog-item{margin-bottom:14px}
+.prog-hd{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
+.prog-track{background:var(--surface2);border-radius:4px;height:8px;overflow:hidden}
+.prog-fill{height:8px;border-radius:4px;transition:width 1s ease}
+
+/* ===== TOAST ===== */
+#toast{position:fixed;bottom:24px;right:24px;background:#1a2a1a;color:#b8e8b0;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;z-index:9999;opacity:0;transform:translateY(10px);transition:all .25s;pointer-events:none;max-width:320px}
+#toast.show{opacity:1;transform:translateY(0)}
+
+/* ===== MISC ===== */
+.sep{height:0.5px;background:var(--border);margin:20px 0}
+.info-banner{background:var(--accent-light);border:0.5px solid var(--accent);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--accent);margin-bottom:16px;display:flex;gap:8px;align-items:flex-start}
+@media(max-width:600px){.form-grid{grid-template-columns:1fr}.form-group.half{grid-column:1}}
+
+  .sum-sess-tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+  .sum-stab{background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--r);padding:5px 16px;font-size:12px;cursor:pointer;color:var(--text2);font-weight:500;font-family:inherit;transition:all .15s}
+  .sum-stab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .sum-kpi-wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;padding:14px 18px;border-bottom:0.5px solid var(--border)}
+  .sum-kpi-box{background:var(--surface2);border-radius:var(--r);padding:10px 12px;border:0.5px solid var(--border)}
+  .sum-kpi-l{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+  .sum-kpi-v{font-size:17px;font-weight:600;color:var(--text)}
+  .sum-kpi-s{font-size:11px;color:var(--text2);margin-top:2px}
+  .sum-grp-hd{text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:7px 8px;white-space:nowrap;border-bottom:0.5px solid var(--border)}
+  .sum-grp-mt{background:#E6F1FB;color:#185FA5}
+  .sum-grp-rs{background:#E1F5EE;color:#1D9E75}
+  .sum-col-hd{font-size:10px;font-weight:600;color:var(--text3);padding:6px 8px;text-align:right;white-space:nowrap;text-transform:uppercase;letter-spacing:.03em;border-bottom:0.5px solid var(--border);background:var(--surface2)}
+  .sum-td{padding:7px 8px;text-align:right;border-bottom:0.5px solid var(--border);color:var(--text);white-space:nowrap;font-size:12px}
+  td.sum-td-left{text-align:left!important;font-weight:500;color:var(--text2)}
+  tr.sum-tr:hover td{background:var(--surface2)}
+  tr.sum-total td{font-weight:600;background:var(--accent-light);color:var(--accent);border-top:1.5px solid var(--accent)}
+  .sum-mp-hd{background:var(--amber-light)!important;color:var(--amber)!important}
+  .sum-mp-td{color:var(--amber)!important;font-weight:500}
+  .tgt-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;padding:14px 18px}
+  .tgt-card2{background:var(--surface2);border-radius:var(--r);padding:11px 14px;border:0.5px solid var(--border)}
+  .tgt-title2{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+  .tgt-row2{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px}
+  .tgt-pct2{font-size:14px;font-weight:700;margin-top:6px}
+  .tgt-good{color:var(--green)}.tgt-ok{color:var(--amber)}.tgt-bad{color:var(--red)}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div>
+      <h1 style="font-size:20px;font-weight:700;color:var(--text)">BVP Workshop — Scrap Position</h1>
+      <p style="color:var(--text3);font-size:12px;margin-top:2px">Live entry system • Auto-updating dashboard</p>
+    </div>
+    <button class="btn btn-ghost" onclick="exportData()" style="font-size:12px">⬇ Export JSON</button>
+  </div>
+
+  <!-- TOP NAV -->
+  <div class="top-nav">
+    <button class="active" onclick="showView('dashboard',this)">📊 Dashboard</button>
+    <button onclick="showView('scrap-entry',this)">➕ Scrap Entry</button>
+    <button onclick="showView('coach-entry',this)">🚃 Coach Entry</button>
+    <button onclick="showView('survey-entry',this)">📋 Survey / Auction</button>
+    <button onclick="showView('all-records',this)">📁 All Records</button>
+    <button onclick="showView('summary-table',this)">📊 Summary Table</button>
+    <button onclick="showView('mp-entry',this)">🔧 M&amp;P Entry</button>
+  </div>
+
+  <!-- SESSION BAR (visible everywhere) -->
+  <div class="session-bar">
+    <label>Active Session</label>
+    <select id="sessionSelect" onchange="onSessionChange()">
+      <option>2026-27</option>
+      <option>2025-26</option>
+      <option>2024-25</option>
+      <option>2023-24</option>
+      <option>2022-23</option>
+      <option>new</option>
+    </select>
+    <input id="newSessionInput" type="text" placeholder="e.g. 2027-28" style="display:none;max-width:120px" oninput="onNewSession(this.value)">
+    <span class="session-badge" id="sessionBadge">Session: 2026-27</span>
+    <span style="font-size:12px;color:var(--accent)" id="sessionCount"></span>
+  </div>
+
+  <!-- ==================== DASHBOARD VIEW ==================== -->
+  <div id="view-dashboard" class="view active">
+
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="section-title">Year-wise scrap disposal (MT)</div>
+    <div class="chart-card">
+      <div class="tab-bar" id="mainTabs">
+        <button class="tab-btn active" onclick="switchMainChart('total',this)">Total</button>
+        <button class="tab-btn" onclick="switchMainChart('ferrous',this)">MS Ferrous</button>
+        <button class="tab-btn" onclick="switchMainChart('wta',this)">WTA</button>
+        <button class="tab-btn" onclick="switchMainChart('nf',this)">Non-Ferrous</button>
+        <button class="tab-btn" onclick="switchMainChart('misc',this)">Misc</button>
+      </div>
+      <div class="legend" id="mainLegend"><span><span class="ldot" style="background:#185FA5"></span>Total disposal (MT)</span></div>
+      <div class="chart-wrap" style="height:280px"><canvas id="mainChart" role="img" aria-label="Year-wise scrap disposal bar chart"></canvas></div>
+    </div>
+
+    <div class="two-col">
+      <div>
+        <div class="section-title">Category breakdown (current session)</div>
+        <div class="chart-card">
+          <div class="legend" id="pieLegend"></div>
+          <div class="chart-wrap" style="height:230px"><canvas id="pieChart" role="img" aria-label="Category breakdown pie chart"></canvas></div>
+        </div>
+      </div>
+      <div>
+        <div class="section-title">Revenue trend (₹ Crore)</div>
+        <div class="chart-card">
+          <div class="chart-wrap" style="height:230px"><canvas id="revChart" role="img" aria-label="Revenue trend line chart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">Month-wise disposal — current session (MT)</div>
+    <div class="chart-card">
+      <div class="legend">
+        <span><span class="ldot" style="background:#185FA5"></span>Ferrous</span>
+        <span><span class="ldot" style="background:#1D9E75"></span>WTA</span>
+        <span><span class="ldot" style="background:#BA7517"></span>Non-Ferrous</span>
+        <span><span class="ldot" style="background:#888780"></span>Misc</span>
+      </div>
+      <div class="chart-wrap" style="height:260px"><canvas id="monthChart" role="img" aria-label="Monthly stacked bar chart"></canvas></div>
+    </div>
+
+    <div class="section-title">Category-wise — all sessions (MT)</div>
+    <div class="chart-card">
+      <div class="legend">
+        <span><span class="ldot" style="background:#185FA5"></span>Ferrous</span>
+        <span><span class="ldot" style="background:#1D9E75"></span>WTA</span>
+        <span><span class="ldot" style="background:#BA7517"></span>Non-Ferrous</span>
+      </div>
+      <div class="chart-wrap" style="height:270px"><canvas id="catChart" role="img" aria-label="Grouped bar chart all sessions"></canvas></div>
+    </div>
+
+    <div class="section-title">Coach condemnation — year-wise</div>
+    <div class="chart-card">
+      <div class="legend">
+        <span><span class="ldot" style="background:#185FA5"></span>PCV</span>
+        <span><span class="ldot" style="background:#E24B4A"></span>OCV</span>
+      </div>
+      <div class="chart-wrap" style="height:250px"><canvas id="coachChart" role="img" aria-label="Coach condemnation stacked bar chart"></canvas></div>
+    </div>
+
+    <div class="section-title">KPI summary</div>
+    <div class="chart-card" id="progSection"></div>
+
+    <div class="section-title">Recent entries (all types)</div>
+    <div class="entries-wrap">
+      <div class="entries-header"><h3>Latest 10 entries</h3></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Session</th><th>Type</th><th>Date</th><th>Description</th><th>Weight/Qty</th><th>Amount</th></tr></thead>
+          <tbody id="recentTbl"></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /dashboard -->
+
+  <!-- ==================== SCRAP ENTRY VIEW ==================== -->
+  <div id="view-scrap-entry" class="view">
+    <div class="info-banner">ℹ️ Scrap disposal entry — date, type, weight aur party select karo. Total amount auto-calculate hoga. Entry save hote hi dashboard update ho jayega.</div>
+
+    <div class="form-card">
+      <h3><span class="icon" style="background:var(--accent-light)">⚙️</span>Scrap Disposal Entry</h3>
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label class="fl required">Session (Year)</label>
+          <input type="text" id="se_session" readonly class="auto-field">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Date (From)</label>
+          <input type="date" id="se_date_from">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Date (To / Delivery)</label>
+          <input type="date" id="se_date_to">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Scrap Type</label>
+          <select id="se_type" onchange="onScrapTypeChange()">
+            <option value="">-- Select Type --</option>
+            <option value="WTA">WTA (Wheel/Tyre/Axle)</option>
+            <option value="MS Ferrous">MS Ferrous / Junk Scrap</option>
+            <option value="Turning Boring">Turning Boring Scrap</option>
+            <option value="Non Ferrous">Non-Ferrous (Copper/Al/SS)</option>
+            <option value="Rubber">Rubber Scrap</option>
+            <option value="Wooden">Wooden Scrap</option>
+            <option value="PVC Plastic">PVC / Plastic / Rexine</option>
+            <option value="Oil Grease">Oil / Grease / Lubricant</option>
+            <option value="Battery">Battery (VRLA / SMF)</option>
+            <option value="Machine Plant">Machine & Plant (M&P)</option>
+            <option value="Mix Kachara">Mix Hetro / Junk Kachara</option>
+            <option value="Other">Other Misc Scrap</option>
+          </select>
+        </div>
+
+        <div class="form-group full">
+          <label class="fl required">Description of Condemned Scrap</label>
+          <textarea id="se_desc" placeholder="e.g. SCRAP OLD USED & U/S DIFFERENT GRADE OIL 3950 LTR WITH 20 DRUM CAP. 200 LTR."></textarea>
+        </div>
+
+        <!-- Weight section -->
+        <div class="form-group">
+          <label class="fl">Qty (in Nos)</label>
+          <input type="number" id="se_qty_nos" placeholder="0" min="0" oninput="calcTotal()">
+        </div>
+        <div class="form-group">
+          <label class="fl">Qty (in Sets)</label>
+          <input type="number" id="se_qty_sets" placeholder="0" min="0" oninput="calcTotal()">
+        </div>
+        <div class="form-group">
+          <label class="fl">WTA / MS Scrap Weight (MT)</label>
+          <input type="number" id="se_wt_wta" placeholder="0.00" step="0.01" min="0" oninput="calcTotal()">
+          <span class="hint">Wheel, Tyre, Axle or MS Ferrous weight in Metric Tons</span>
+        </div>
+        <div class="form-group">
+          <label class="fl">Turning Boring Weight (MT)</label>
+          <input type="number" id="se_wt_tb" placeholder="0.00" step="0.01" min="0" oninput="calcTotal()">
+        </div>
+        <div class="form-group">
+          <label class="fl">MS Scrap Weight (MT)</label>
+          <input type="number" id="se_wt_ms" placeholder="0.00" step="0.01" min="0" oninput="calcTotal()">
+          <span class="hint">For MS junk, bogie frames, etc.</span>
+        </div>
+        <div class="form-group">
+          <label class="fl">Non-Ferrous Weight (MT)</label>
+          <input type="number" id="se_wt_nf" placeholder="0.00" step="0.01" min="0" oninput="calcTotal()">
+          <span class="hint">Copper, Aluminium, SS, Bronze</span>
+        </div>
+        <div class="form-group">
+          <label class="fl">Other Scrap Weight (MT)</label>
+          <input type="number" id="se_wt_other" placeholder="0.00" step="0.01" min="0" oninput="calcTotal()">
+          <span class="hint">Oil/Grease/Rubber/Wooden (MT)</span>
+        </div>
+        <div class="form-group">
+          <label class="fl">Total Weight (MT) — Auto</label>
+          <input type="number" id="se_wt_total" class="auto-field" readonly placeholder="Auto calculated">
+        </div>
+
+        <!-- Lot & Party -->
+        <div class="form-group">
+          <label class="fl required">Lot No. / Advice Note No.</label>
+          <input type="text" id="se_lot" placeholder="e.g. 88260308GRADEOILWS">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Handed Over To (Party)</label>
+          <input type="text" id="se_party" placeholder="e.g. GALAXY PETROLEUM - RAIGADH">
+        </div>
+        <div class="form-group">
+          <label class="fl">Rate (₹ per MT / unit)</label>
+          <input type="number" id="se_rate" placeholder="0" min="0" oninput="calcTotal()">
+        </div>
+        <div class="form-group">
+          <label class="fl">Total Amount (₹) — Auto</label>
+          <input type="text" id="se_amount" class="auto-field" readonly placeholder="Auto calculated">
+        </div>
+        <div class="form-group">
+          <label class="fl">Remarks</label>
+          <input type="text" id="se_remarks" placeholder="Optional remarks">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="saveScrapEntry()">✓ Save Entry</button>
+        <button class="btn btn-ghost" onclick="clearScrapForm()">✕ Clear</button>
+        <span class="calc-badge" id="calcDisplay" style="display:none"></span>
+      </div>
+    </div>
+
+    <!-- Scrap entries table -->
+    <div class="entries-wrap">
+      <div class="entries-header">
+        <h3>Scrap Entries — <span id="scrapTableSession"></span></h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="scrapFilterSession" onchange="renderScrapTable()" style="font-size:12px;padding:4px 8px">
+            <option value="all">All Sessions</option>
+          </select>
+          <span id="scrapEntryCount" style="font-size:12px;color:var(--text3)"></span>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Session</th><th>Date From</th><th>Date To</th><th>Type</th><th>Description</th><th>Total WT (MT)</th><th>Lot No.</th><th>Party</th><th>Rate ₹</th><th>Amount ₹</th><th></th></tr></thead>
+          <tbody id="scrapTbl"></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /scrap-entry -->
+
+  <!-- ==================== COACH ENTRY VIEW ==================== -->
+  <div id="view-coach-entry" class="view">
+    <div class="info-banner">ℹ️ Coach condemnation entry — har coach ke liye ek row. Coach No., type, RSO number, sale details add karo.</div>
+
+    <div class="form-card">
+      <h3><span class="icon" style="background:var(--amber-light)">🚃</span>Coach Condemnation Entry</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="fl required">Session (Year)</label>
+          <input type="text" id="ce_session" readonly class="auto-field">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Sr. No.</label>
+          <input type="number" id="ce_sr" placeholder="Auto / Manual" min="1">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Coach No.</label>
+          <input type="text" id="ce_coach_no" placeholder="e.g. 942370">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Coach Code / Type</label>
+          <select id="ce_code">
+            <option value="">-- Select Type --</option>
+            <option>GS</option><option>GSLR</option><option>GSLRD</option>
+            <option>RCC</option><option>PP</option><option>RH</option><option>RHV</option>
+            <option>RSM</option><option>RT</option><option>RE</option>
+            <option>VPH/VPUHX</option><option>VPU</option>
+            <option>WGCB</option><option>WGSCN</option><option>WGSCZ</option>
+            <option>WGFCWAC</option><option>WGACCN</option><option>WGACCW</option>
+            <option>WGSCZAC</option><option>GSLR/RH</option><option>WGSCN/RE</option>
+            <option>GSLRD DMU</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="fl">Tare Weight</label>
+          <input type="number" id="ce_tare" placeholder="e.g. 39.4" step="0.1">
+        </div>
+        <div class="form-group">
+          <label class="fl">No. of Seats</label>
+          <input type="number" id="ce_seats" placeholder="e.g. 72">
+        </div>
+        <div class="form-group">
+          <label class="fl">No. of Berths</label>
+          <input type="number" id="ce_berths" placeholder="e.g. 72">
+        </div>
+        <div class="form-group">
+          <label class="fl">Cost ('000)</label>
+          <input type="number" id="ce_cost" placeholder="e.g. 2350">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Overaged / Underaged</label>
+          <select id="ce_age">
+            <option value="">-- Select --</option>
+            <option>OVERAGED</option>
+            <option>UNDERAGED</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="fl required">Condemned By</label>
+          <select id="ce_cond_by">
+            <option value="">-- Select --</option>
+            <option>CWM-BVP</option><option>CME-CCG</option><option>CWE-CCG</option>
+            <option>CWE-BVP</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="fl">Coach Category</label>
+          <select id="ce_cat">
+            <option value="PCV">PCV (Passenger Carrying)</option>
+            <option value="OCV">OCV (Other Coaching)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="fl">RSO No.</label>
+          <input type="text" id="ce_rso" placeholder="e.g. M.100/2/RSO/2026-27/01">
+        </div>
+        <div class="form-group">
+          <label class="fl">RSO Date</label>
+          <input type="date" id="ce_rso_date">
+        </div>
+        <div class="form-group">
+          <label class="fl">Offer / Auction Date</label>
+          <input type="date" id="ce_offer_date">
+        </div>
+        <div class="form-group">
+          <label class="fl">1st Auction Date</label>
+          <input type="date" id="ce_auc1">
+        </div>
+        <div class="form-group">
+          <label class="fl">2nd Auction Date</label>
+          <input type="date" id="ce_auc2">
+        </div>
+        <div class="form-group">
+          <label class="fl">Sale Order No.</label>
+          <input type="text" id="ce_sale_order" placeholder="e.g. 88230507.COACH.4WS">
+        </div>
+        <div class="form-group">
+          <label class="fl">Sale Order Date</label>
+          <input type="date" id="ce_sale_date">
+        </div>
+        <div class="form-group">
+          <label class="fl">Purchaser Name</label>
+          <input type="text" id="ce_purchaser" placeholder="e.g. GAJENDRA SCRAPE SUPPLIERS GNC">
+        </div>
+        <div class="form-group">
+          <label class="fl">Delivery From</label>
+          <input type="date" id="ce_del_from">
+        </div>
+        <div class="form-group">
+          <label class="fl">Delivery To</label>
+          <input type="date" id="ce_del_to">
+        </div>
+        <div class="form-group">
+          <label class="fl">Sale Amount (₹)</label>
+          <input type="number" id="ce_sale_amt" placeholder="e.g. 852111">
+        </div>
+        <div class="form-group">
+          <label class="fl">Disposal Status</label>
+          <select id="ce_status">
+            <option value="SOLD">SOLD</option>
+            <option value="NOT SOLD">NOT SOLD</option>
+            <option value="PENDING">PENDING</option>
+          </select>
+        </div>
+        <div class="form-group full">
+          <label class="fl">Special Remarks / CRS Letter</label>
+          <textarea id="ce_remarks" placeholder="Any special condemnation order or letter reference"></textarea>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="saveCoachEntry()">✓ Save Coach Entry</button>
+        <button class="btn btn-ghost" onclick="clearCoachForm()">✕ Clear</button>
+      </div>
+    </div>
+
+    <!-- Coach table -->
+    <div class="entries-wrap">
+      <div class="entries-header">
+        <h3>Coach Entries</h3>
+        <select id="coachFilterSession" onchange="renderCoachTable()" style="font-size:12px;padding:4px 8px">
+          <option value="all">All Sessions</option>
+        </select>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Sr.</th><th>Session</th><th>Coach No.</th><th>Code</th><th>Category</th><th>Age</th><th>Cond. By</th><th>RSO No.</th><th>Purchaser</th><th>Status</th><th></th></tr></thead>
+          <tbody id="coachTbl"></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /coach-entry -->
+
+  <!-- ==================== SURVEY ENTRY VIEW ==================== -->
+  <div id="view-survey-entry" class="view">
+    <div class="info-banner">ℹ️ Survey Committee — auction lot entry. Har lot ke liye description, qty, offer date aur status add karo.</div>
+
+    <div class="form-card">
+      <h3><span class="icon" style="background:var(--green-light)">📋</span>Survey Committee / Auction Lot Entry</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="fl required">Session</label>
+          <input type="text" id="sv_session" readonly class="auto-field">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Lot No.</label>
+          <input type="text" id="sv_lot" placeholder="e.g. 25.26.04.07">
+        </div>
+        <div class="form-group full">
+          <label class="fl required">Location</label>
+          <input type="text" id="sv_location" placeholder="e.g. BVP BG Workshop near Incinerator area">
+        </div>
+        <div class="form-group full">
+          <label class="fl required">Description of Scrap</label>
+          <textarea id="sv_desc" placeholder="Detailed description of the lot including composition, approximate weight, delivery mode, etc."></textarea>
+        </div>
+        <div class="form-group">
+          <label class="fl required">Quantity</label>
+          <input type="number" id="sv_qty" placeholder="e.g. 50" step="0.001" min="0" oninput="calcSurveyTotal()">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Unit</label>
+          <select id="sv_unit" onchange="calcSurveyTotal()">
+            <option value="MT">MT (Metric Ton)</option>
+            <option value="Kg">Kg</option>
+            <option value="No">No. (Numbers)</option>
+            <option value="Set">Set</option>
+            <option value="Ltr">Ltr</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="fl">Approx Weight (MT)</label>
+          <input type="number" id="sv_wt" placeholder="0.00" step="0.01">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Offer / Auction Date</label>
+          <input type="date" id="sv_offer_date">
+        </div>
+        <div class="form-group">
+          <label class="fl">Bid Amount (₹)</label>
+          <input type="number" id="sv_bid" placeholder="0" min="0">
+        </div>
+        <div class="form-group">
+          <label class="fl">Purchaser Name</label>
+          <input type="text" id="sv_purchaser" placeholder="Firm / party name">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Status</label>
+          <select id="sv_status">
+            <option value="UNDER AUCTION">UNDER AUCTION</option>
+            <option value="SOLD OUT">SOLD OUT</option>
+            <option value="NOT SOLD">NOT SOLD</option>
+            <option value="RE-AUCTION">RE-AUCTION</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="fl">Scrap Category</label>
+          <select id="sv_category">
+            <option value="">-- Optional --</option>
+            <option>MS Ferrous</option><option>Non-Ferrous</option><option>WTA</option>
+            <option>Rubber</option><option>Wooden</option><option>PVC/Plastic</option>
+            <option>Battery</option><option>Mix/Junk</option><option>Machine/Plant</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group full">
+          <label class="fl">Remarks</label>
+          <input type="text" id="sv_remarks" placeholder="e.g. SOLD OUT, RE AUCTION">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-success" onclick="saveSurveyEntry()">✓ Save Lot Entry</button>
+        <button class="btn btn-ghost" onclick="clearSurveyForm()">✕ Clear</button>
+      </div>
+    </div>
+
+    <!-- Survey table -->
+    <div class="entries-wrap">
+      <div class="entries-header">
+        <h3>Auction Lot Tracker</h3>
+        <select id="surveyFilterSession" onchange="renderSurveyTable()" style="font-size:12px;padding:4px 8px">
+          <option value="all">All Sessions</option>
+        </select>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Sr.</th><th>Session</th><th>Lot No.</th><th>Category</th><th>Qty</th><th>Unit</th><th>Offer Date</th><th>Purchaser</th><th>Bid ₹</th><th>Status</th><th></th></tr></thead>
+          <tbody id="surveyTbl"></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /survey-entry -->
+
+  <!-- ==================== ALL RECORDS VIEW ==================== -->
+  <div id="view-all-records" class="view">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px" id="recordsKPI"></div>
+
+    <div class="section-title">All Scrap Entries</div>
+    <div class="entries-wrap" id="allScrapWrap">
+      <div class="entries-header"><h3>Scrap Disposal Records</h3></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Session</th><th>Date</th><th>Type</th><th>Description (short)</th><th>Total WT</th><th>Party</th><th>Amount ₹</th></tr></thead>
+          <tbody id="allScrapTbl"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-title">All Coach Entries</div>
+    <div class="entries-wrap">
+      <div class="entries-header"><h3>Coach Condemnation Records</h3></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Session</th><th>Sr.</th><th>Coach No.</th><th>Code</th><th>Cat.</th><th>Age</th><th>Purchaser</th><th>Status</th></tr></thead>
+          <tbody id="allCoachTbl"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section-title">All Auction Lots</div>
+    <div class="entries-wrap">
+      <div class="entries-header"><h3>Survey Committee Records</h3></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Session</th><th>Lot No.</th><th>Qty</th><th>Unit</th><th>Offer Date</th><th>Bid ₹</th><th>Status</th></tr></thead>
+          <tbody id="allSurveyTbl"></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /all-records -->
+
+  <!-- ==================== SUMMARY TABLE VIEW ==================== -->
+  <div id="view-summary-table" class="view">
+e>
+    <div class="section-title">Session-wise Monthly Summary</div>
+    <div class="info-banner">ℹ️ Historical data 2023-24 se. Naye sessions ke entries automatically yahan add ho jayenge. M&amp;P items amber column mein dikhenge.</div>
+    <div class="sum-sess-tabs" id="sumSessTabs"></div>
+    <div id="sumContent"></div>
+  </div><!-- /summary-table -->
+
+  <!-- ==================== M&P ENTRY VIEW ==================== -->
+  <div id="view-mp-entry" class="view">
+    <div class="info-banner">ℹ️ Machine &amp; Plant (M&amp;P) items condemned entry. Ye data Summary Table ke amber (M&amp;P) column mein automatically appear hoga aur dashboard KPI bhi update hoga.</div>
+    <div class="form-card">
+      <h3><span class="icon" style="background:var(--amber-light)">🔧</span>M&amp;P Items Condemnation Entry</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="fl required">Session</label>
+          <input type="text" id="mp_session" readonly class="auto-field">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Date</label>
+          <input type="date" id="mp_date">
+        </div>
+        <div class="form-group required">
+          <label class="fl required">M&amp;P Item Description</label>
+          <input type="text" id="mp_item" placeholder="e.g. Lathe Machine / Drill Press / Transformer">
+        </div>
+        <div class="form-group">
+          <label class="fl required">Qty (Nos.)</label>
+          <input type="number" id="mp_qty" placeholder="1" min="1" oninput="calcMPTotal()">
+        </div>
+        <div class="form-group">
+          <label class="fl">Weight (MT)</label>
+          <input type="number" id="mp_wt" placeholder="0.000" step="0.001" min="0" oninput="calcMPTotal()">
+          <span class="hint">Leave blank if weight not known</span>
+        </div>
+        <div class="form-group">
+          <label class="fl required">Month (For summary table)</label>
+          <select id="mp_month">
+            <option value="04">April</option><option value="05">May</option><option value="06">June</option>
+            <option value="07">July</option><option value="08">August</option><option value="09">September</option>
+            <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+            <option value="01">January</option><option value="02">February</option><option value="03">March</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="fl">Location</label>
+          <input type="text" id="mp_location" placeholder="e.g. BG Workshop Machine Shop">
+        </div>
+        <div class="form-group">
+          <label class="fl">Condemned By</label>
+          <select id="mp_cond_by">
+            <option value="">-- Select --</option>
+            <option>CWM-BVP</option><option>CME-CCG</option><option>CWE-CCG</option><option>CWE-BVP</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="fl">Lot / Advice No.</label>
+          <input type="text" id="mp_lot" placeholder="e.g. MP-2026-27-01">
+        </div>
+        <div class="form-group">
+          <label class="fl">Party / Purchaser Name</label>
+          <input type="text" id="mp_party" placeholder="Purchaser firm name">
+        </div>
+        <div class="form-group">
+          <label class="fl">Rate (₹)</label>
+          <input type="number" id="mp_rate" placeholder="0" min="0" oninput="calcMPTotal()">
+        </div>
+        <div class="form-group">
+          <label class="fl">Total Amount (₹) — Auto</label>
+          <input type="text" id="mp_amount" readonly class="auto-field">
+        </div>
+        <div class="form-group">
+          <label class="fl">Status</label>
+          <select id="mp_status">
+            <option>SOLD</option><option>NOT SOLD</option><option>PENDING</option>
+          </select>
+        </div>
+        <div class="form-group full">
+          <label class="fl">Remarks</label>
+          <textarea id="mp_remarks" placeholder="Any additional remarks"></textarea>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="saveMPEntry()">✓ Save M&amp;P Entry</button>
+        <button class="btn btn-ghost" onclick="clearMPForm()">✕ Clear</button>
+      </div>
+    </div>
+    <div class="entries-wrap">
+      <div class="entries-header">
+        <h3>M&amp;P Items Entries</h3>
+        <select id="mpFilterSession" onchange="renderMPTable()" style="font-size:12px;padding:4px 8px">
+          <option value="all">All Sessions</option>
+        </select>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Session</th><th>Date</th><th>Month</th><th>Item</th><th>Qty</th><th>Wt (MT)</th><th>Lot No.</th><th>Party</th><th>Amount ₹</th><th>Status</th><th></th></tr></thead>
+          <tbody id="mpTbl"></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /mp-entry -->
+
+</div><!-- /page -->
+
+<div id="toast"></div>
+
+<!-- ==================== SEED DATA ==================== -->
+<script>
+/* Seed historical data (from Excel) — loaded only once */
+const SEED_SCRAP = [
+  /* 2025-26 monthly summaries as aggregated entries */
+  {id:'s_2526_apr',session:'2025-26',date_from:'2025-04-01',date_to:'2025-04-30',type:'MS Ferrous',desc:'April 2025 MS Ferrous consolidated',qty_nos:'',qty_sets:'',wt_wta:41.75,wt_tb:0,wt_ms:261,wt_nf:0,wt_other:10,wt_total:312.75,lot:'APR2526-F',party:'Various',rate:0,amount:16680327,remarks:'Historical seed'},
+  {id:'s_2526_may',session:'2025-26',date_from:'2025-05-01',date_to:'2025-05-31',type:'WTA',desc:'May 2025 consolidated',qty_nos:'',qty_sets:'',wt_wta:207.96,wt_tb:0,wt_ms:6,wt_nf:0,wt_other:20,wt_total:233.96,lot:'MAY2526',party:'Various',rate:0,amount:6293332,remarks:'Historical seed'},
+  {id:'s_2526_jun',session:'2025-26',date_from:'2025-06-01',date_to:'2025-06-30',type:'MS Ferrous',desc:'June 2025 consolidated',qty_nos:'',qty_sets:'',wt_wta:166.22,wt_tb:0,wt_ms:233.315,wt_nf:3.52,wt_other:0,wt_total:403.055,lot:'JUN2526',party:'Various',rate:0,amount:13570297,remarks:'Historical seed'},
+  {id:'s_2526_jul',session:'2025-26',date_from:'2025-07-01',date_to:'2025-07-31',type:'MS Ferrous',desc:'July 2025 consolidated',qty_nos:'',qty_sets:'',wt_wta:122.17,wt_tb:0,wt_ms:235,wt_nf:91.811,wt_other:0,wt_total:448.981,lot:'JUL2526',party:'Various',rate:0,amount:24350168,remarks:'Historical seed'},
+  {id:'s_2526_aug',session:'2025-26',date_from:'2025-08-01',date_to:'2025-08-31',type:'MS Ferrous',desc:'August 2025 consolidated',qty_nos:'',qty_sets:'',wt_wta:164.45,wt_tb:0,wt_ms:117.6,wt_nf:0,wt_other:5,wt_total:287.05,lot:'AUG2526',party:'Various',rate:0,amount:9253761,remarks:'Historical seed'},
+  {id:'s_2526_sep',session:'2025-26',date_from:'2025-09-01',date_to:'2025-09-30',type:'MS Ferrous',desc:'September 2025 consolidated',qty_nos:'',qty_sets:'',wt_wta:84.36,wt_tb:0,wt_ms:398.2,wt_nf:83.862,wt_other:114.7,wt_total:681.122,lot:'SEP2526',party:'Various',rate:0,amount:25554044,remarks:'Historical seed'},
+  {id:'s_2526_oct',session:'2025-26',date_from:'2025-10-01',date_to:'2025-10-31',type:'MS Ferrous',desc:'October 2025 consolidated',qty_nos:'',qty_sets:'',wt_wta:84.17,wt_tb:0,wt_ms:182.818,wt_nf:0,wt_other:0,wt_total:266.988,lot:'OCT2526',party:'Various',rate:0,amount:11606358,remarks:'Historical seed'},
+  {id:'s_2526_nov',session:'2025-26',date_from:'2025-11-01',date_to:'2025-11-30',type:'MS Ferrous',desc:'November 2025 consolidated',qty_nos:'',qty_sets:'',wt_wta:81.13,wt_tb:0,wt_ms:472,wt_nf:0,wt_other:195,wt_total:748.13,lot:'NOV2526',party:'Various',rate:0,amount:15120715,remarks:'Historical seed'},
+  {id:'s_2526_dec',session:'2025-26',date_from:'2025-12-01',date_to:'2025-12-31',type:'MS Ferrous',desc:'December 2025 consolidated',qty_nos:'',qty_sets:'',wt_wta:208.11,wt_tb:0,wt_ms:333,wt_nf:13.238,wt_other:0,wt_total:554.348,lot:'DEC2526',party:'Various',rate:0,amount:17990253,remarks:'Historical seed'},
+  {id:'s_2526_jan',session:'2025-26',date_from:'2026-01-01',date_to:'2026-01-31',type:'MS Ferrous',desc:'January 2026 consolidated',qty_nos:'',qty_sets:'',wt_wta:162.95,wt_tb:0,wt_ms:43.673,wt_nf:8.482,wt_other:37.16,wt_total:252.265,lot:'JAN2526',party:'Various',rate:0,amount:9259573,remarks:'Historical seed'},
+  {id:'s_2526_feb',session:'2025-26',date_from:'2026-02-01',date_to:'2026-02-28',type:'MS Ferrous',desc:'February 2026 consolidated',qty_nos:'',qty_sets:'',wt_wta:166.285,wt_tb:0,wt_ms:441,wt_nf:120,wt_other:20,wt_total:747.285,lot:'FEB2526',party:'Various',rate:0,amount:33015856,remarks:'Historical seed'},
+  {id:'s_2526_mar',session:'2025-26',date_from:'2026-03-01',date_to:'2026-03-31',type:'MS Ferrous',desc:'March 2026 consolidated',qty_nos:'',qty_sets:'',wt_wta:118.79,wt_tb:0,wt_ms:14.2,wt_nf:0,wt_other:5,wt_total:137.99,lot:'MAR2526',party:'Various',rate:0,amount:3886850,remarks:'Historical seed'},
+  /* 2024-25 */
+  {id:'s_2425_apr',session:'2024-25',date_from:'2024-04-01',date_to:'2024-04-30',type:'MS Ferrous',desc:'April 2024 consolidated',qty_nos:'',qty_sets:'',wt_wta:80.44,wt_tb:0,wt_ms:249,wt_nf:5.74,wt_other:19,wt_total:354.18,lot:'APR2425',party:'Various',rate:0,amount:11379101,remarks:'Historical seed'},
+  {id:'s_2425_may',session:'2024-25',date_from:'2024-05-01',date_to:'2024-05-31',type:'MS Ferrous',desc:'May 2024',qty_nos:'',qty_sets:'',wt_wta:123.15,wt_tb:0,wt_ms:94.625,wt_nf:0,wt_other:0,wt_total:217.775,lot:'MAY2425',party:'Various',rate:0,amount:7128027,remarks:'Historical seed'},
+  {id:'s_2425_jun',session:'2024-25',date_from:'2024-06-01',date_to:'2024-06-30',type:'MS Ferrous',desc:'June 2024',qty_nos:'',qty_sets:'',wt_wta:82.285,wt_tb:0,wt_ms:238.345,wt_nf:60.786,wt_other:0,wt_total:381.416,lot:'JUN2425',party:'Various',rate:0,amount:18281418,remarks:'Historical seed'},
+  {id:'s_2425_rest',session:'2024-25',date_from:'2024-07-01',date_to:'2025-03-31',type:'MS Ferrous',desc:'Jul-Mar 2024-25 consolidated',qty_nos:'',qty_sets:'',wt_wta:1005.675,wt_tb:0,wt_ms:895.965,wt_nf:259.399,wt_other:268.3,wt_total:2429.816,lot:'REST2425',party:'Various',rate:0,amount:91572745,remarks:'Historical seed'},
+  /* 2023-24 */
+  {id:'s_2324_all',session:'2023-24',date_from:'2023-04-01',date_to:'2024-03-31',type:'MS Ferrous',desc:'2023-24 full year consolidated',qty_nos:'',qty_sets:'',wt_wta:996.725,wt_tb:0,wt_ms:1978.697,wt_nf:393.487,wt_other:653.463,wt_total:4022.372,lot:'FY2324',party:'Various',rate:0,amount:152450443,remarks:'Historical seed'},
+];
+
+const SEED_COACH = [
+  {id:'c_2526_1',session:'2025-26',sr:1,coach_no:'942370',code:'WGSCN',cat:'PCV',age:'OVERAGED',cond_by:'CWM-BVP',rso:'M.100/2/RSO/2025-26',rso_date:'2025-04-01',offer_date:'',auc1:'',auc2:'',sale_order:'',sale_date:'',purchaser:'',del_from:'',del_to:'',sale_amt:'',status:'SOLD',remarks:''},
+  {id:'c_2526_tot',session:'2025-26',sr:'AGG',coach_no:'(63 total)',code:'Various',cat:'PCV',age:'Mixed',cond_by:'Various',rso:'Multiple',rso_date:'',offer_date:'',auc1:'',auc2:'',sale_order:'',sale_date:'',purchaser:'Various',del_from:'',del_to:'',sale_amt:'',status:'SOLD',remarks:'2025-26: 40 PCV + 23 OCV = 63 total. Seed data.'},
+  {id:'c_2425_tot',session:'2024-25',sr:'AGG',coach_no:'(91 total)',code:'Various',cat:'PCV',age:'Mixed',cond_by:'Various',rso:'Multiple',rso_date:'',offer_date:'',auc1:'',auc2:'',sale_order:'',sale_date:'',purchaser:'Various',del_from:'',del_to:'',sale_amt:'',status:'SOLD',remarks:'2024-25: 80 PCV + 11 OCV = 91 total. Seed data.'},
+  {id:'c_2324_tot',session:'2023-24',sr:'AGG',coach_no:'(40 total)',code:'Various',cat:'PCV',age:'Mixed',cond_by:'Various',rso:'Multiple',rso_date:'',offer_date:'',auc1:'',auc2:'',sale_order:'',sale_date:'',purchaser:'Various',del_from:'',del_to:'',sale_amt:'',status:'SOLD',remarks:'2023-24: 27 PCV + 13 OCV = 40 total. Seed data.'},
+];
+
+const SEED_SURVEY = [
+  {id:'sv_1',session:'2024-25',lot:'25.24.12.66',location:'BVP MG Workshop',desc:'Cond. Wooden Scrap',qty:25,unit:'MT',wt:25,offer_date:'2024-12-02',bid:'',purchaser:'',status:'SOLD OUT',category:'Wooden',remarks:'SOLD OUT, RE AUCTION'},
+  {id:'sv_2',session:'2024-25',lot:'25.24.12.77',location:'MG W/S Open Area',desc:'Mix Hetro Scrap Junk Kachara',qty:150,unit:'MT',wt:150,offer_date:'2024-12-02',bid:'',purchaser:'',status:'SOLD OUT',category:'Mix/Junk',remarks:'SOLD OUT'},
+  {id:'sv_3',session:'2024-25',lot:'25.24.12.78',location:'MG W/S Open Area Near Coach lowering shed',desc:'Mix Hetro Scrap Junk Kachara',qty:100,unit:'MT',wt:100,offer_date:'2024-12-02',bid:'',purchaser:'',status:'SOLD OUT',category:'Mix/Junk',remarks:'SOLD OUT'},
+  {id:'sv_4',session:'2025-26',lot:'25.25.04.07',location:'BVP BG W/S Near Incinerator',desc:'Scrap Melting - MS items nut bolt pin',qty:50,unit:'MT',wt:50,offer_date:'2025-04-16',bid:'',purchaser:'',status:'SOLD OUT',category:'MS Ferrous',remarks:'SOLD OUT'},
+  {id:'sv_5',session:'2025-26',lot:'25.25.04.12',location:'BG Workshop Near new rehab shop',desc:'Condemn LHB Parts - control arm, coupler, brake disc',qty:18,unit:'MT',wt:18,offer_date:'2025-04-16',bid:'',purchaser:'',status:'SOLD OUT',category:'MS Ferrous',remarks:'SOLD OUT'},
+  {id:'sv_6',session:'2025-26',lot:'25.25.05.25',location:'MG Workshop Near Coach Lowering Shed',desc:'Condemn unserviceable seat berth ICF/LHB AC/Non-AC',qty:10,unit:'MT',wt:10,offer_date:'2025-05-08',bid:'',purchaser:'',status:'UNDER AUCTION',category:'Mix/Junk',remarks:'UNDER AUCTION'},
+  {id:'sv_7',session:'2025-26',lot:'25.25.05.26',location:'BVP MG Workshop/RB Section',desc:'Cond. Sunmica lavatory door',qty:7,unit:'MT',wt:7,offer_date:'2025-05-08',bid:'',purchaser:'',status:'UNDER AUCTION',category:'Mix/Junk',remarks:'UNDER AUCTION'},
+  {id:'sv_8',session:'2025-26',lot:'25.25.07.28',location:'CUG Section Store BG W/S',desc:'Wearing Piece of ICF coach - Bronze',qty:900,unit:'Kg',wt:0.9,offer_date:'2025-07-12',bid:'',purchaser:'',status:'SOLD OUT',category:'Non-Ferrous',remarks:'SOLD OUT'},
+  {id:'sv_9',session:'2025-26',lot:'25.25.07.29',location:'BG W/S Near TL fitting section',desc:'Condemn Brushless Alternator 4.5 kW',qty:10.5,unit:'MT',wt:10.5,offer_date:'2025-07-12',bid:'',purchaser:'',status:'SOLD OUT',category:'Non-Ferrous',remarks:'SOLD OUT'},
+  {id:'sv_10',session:'2025-26',lot:'25.25.07.33',location:'Near MS JUNK LOT area',desc:'Condemn unserviceable MS items - Bogie Frame, Head Stock',qty:100,unit:'MT',wt:100,offer_date:'2025-07-12',bid:'',purchaser:'',status:'SOLD OUT',category:'MS Ferrous',remarks:'SOLD OUT'},
+  {id:'sv_11',session:'2025-26',lot:'25.25.07.35',location:'BVP BG Workshop near Big Water Tank',desc:'MS Mix Scrap - Protective Tube, Dash Pot, Sole Bar',qty:150,unit:'MT',wt:150,offer_date:'2025-07-12',bid:'',purchaser:'',status:'UNDER AUCTION',category:'MS Ferrous',remarks:'UNDER AUCTION'},
+  {id:'sv_12',session:'2025-26',lot:'25.25.08.41',location:'BVP BG Workshop Near New Battery Section',desc:'Condemn VRLA Battery 6V/120AH - 2700 No.',qty:66.15,unit:'MT',wt:66.15,offer_date:'2025-08-19',bid:'',purchaser:'',status:'UNDER AUCTION',category:'Battery',remarks:'UNDER AUCTION'},
+  {id:'sv_13',session:'2025-26',lot:'25.25.08.53',location:'BG Workshop',desc:'Cond. Mix MS scrap',qty:120,unit:'MT',wt:120,offer_date:'2025-08-28',bid:'',purchaser:'',status:'UNDER AUCTION',category:'MS Ferrous',remarks:'UNDER AUCTION'},
+];
+
+/* Historical year aggregates for charts (from Excel) — not user-editable */
+const HIST_YEAR = {
+  '2017-18':{ferrous:405.8,wta:643.0,nf:7.4,misc:0,rev:0,pcv:55,ocv:7},
+  '2018-19':{ferrous:302.1,wta:1208.6,nf:13.0,misc:41.9,rev:0,pcv:27,ocv:4},
+  '2019-20':{ferrous:1170.9,wta:1083.1,nf:348.2,misc:26.7,rev:0,pcv:28,ocv:3},
+  '2020-21':{ferrous:660.1,wta:397.9,nf:132.8,misc:49,rev:0,pcv:38,ocv:5},
+  '2021-22':{ferrous:940.3,wta:593.7,nf:171.3,misc:54.5,rev:0,pcv:13,ocv:18},
+  '2022-23':{ferrous:1004.5,wta:828.1,nf:205.1,misc:95.5,rev:0,pcv:135,ocv:9},
+  '2023-24':{ferrous:1978.7,wta:996.7,nf:393.5,misc:653.5,rev:15245,pcv:27,ocv:13,mp_mt:26.071,mp_rs:1634003},
+  '2024-25':{ferrous:1477.9,wta:1292.1,nf:325.9,misc:287.3,rev:12836,pcv:80,ocv:11,mp_mt:10,mp_rs:0},
+  '2025-26':{ferrous:2737.8,wta:1608.3,nf:320.9,misc:406.9,rev:18658,pcv:40,ocv:23,mp_mt:4,mp_rs:120750},
+};
+</script>
+
+<!-- ==================== MAIN JS ==================== -->
+<script>
+/* ============ STORAGE ============ */
+const DB_KEYS = {scrap:'bvp_scrap',coach:'bvp_coach',survey:'bvp_survey',seeded:'bvp_seeded'};
+
+function loadDB(key){ try{return JSON.parse(localStorage.getItem(key)||'[]')}catch{return[]} }
+function saveDB(key,arr){ localStorage.setItem(key,JSON.stringify(arr)) }
+
+function getData(){
+  return {
+    scrap:  loadDB(DB_KEYS.scrap),
+    coach:  loadDB(DB_KEYS.coach),
+    survey: loadDB(DB_KEYS.survey)
+  };
+}
+
+/* Seed once */
+if(!localStorage.getItem(DB_KEYS.seeded)){
+  saveDB(DB_KEYS.scrap,  SEED_SCRAP);
+  saveDB(DB_KEYS.coach,  SEED_COACH);
+  saveDB(DB_KEYS.survey, SEED_SURVEY);
+  localStorage.setItem(DB_KEYS.seeded,'1');
+}
+
+/* ============ SESSION ============ */
+let currentSession = '2026-27';
+
+function onSessionChange(){
+  const v = document.getElementById('sessionSelect').value;
+  if(v==='new'){
+    document.getElementById('newSessionInput').style.display='';
+    return;
+  }
+  document.getElementById('newSessionInput').style.display='none';
+  currentSession = v;
+  applySession();
+}
+function onNewSession(v){
+  if(v.length>=5){ currentSession=v; applySession(); }
+}
+function applySession(){
+  const s = currentSession;
+  document.getElementById('sessionBadge').textContent = 'Session: '+s;
+  document.getElementById('se_session').value = s;
+  document.getElementById('ce_session').value = s;
+  document.getElementById('sv_session').value = s;
+  const mpEl = document.getElementById('mp_session'); if(mpEl) mpEl.value = s;
+  updateSessionCount();
+  refreshAll();
+  populateSessionFilters();
+}
+function updateSessionCount(){
+  const d = getData();
+  const sc = d.scrap.filter(x=>x.session===currentSession).length;
+  const co = d.coach.filter(x=>x.session===currentSession).length;
+  const sv = d.survey.filter(x=>x.session===currentSession).length;
+  const mp = typeof loadMP==='function' ? loadMP().filter(x=>x.session===currentSession).length : 0;
+  document.getElementById('sessionCount').textContent = `${sc} scrap • ${co} coaches • ${sv} lots • ${mp} M&P`;
+}
+
+/* ============ VIEW SWITCHING ============ */
+function showView(id,btn){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+id).classList.add('active');
+  document.querySelectorAll('.top-nav button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  if(id==='dashboard') refreshDashboard();
+  if(id==='scrap-entry'){ renderScrapTable(); document.getElementById('scrapTableSession').textContent=currentSession; }
+  if(id==='coach-entry') renderCoachTable();
+  if(id==='survey-entry') renderSurveyTable();
+  if(id==='all-records') renderAllRecords();
+  if(id==='summary-table') showSummaryView();
+  if(id==='mp-entry'){ renderMPTable(); const el=document.getElementById('mp_session'); if(el) el.value=currentSession; }
+}
+
+/* ============ SCRAP FORM ============ */
+function onScrapTypeChange(){
+  const t = document.getElementById('se_type').value;
+  const hints = {
+    'WTA':'Fill WTA Weight field',
+    'MS Ferrous':'Fill MS Scrap Weight field',
+    'Turning Boring':'Fill Turning Boring Weight field',
+    'Non Ferrous':'Fill Non-Ferrous Weight field',
+    'Oil Grease':'Fill Other Scrap (Oil/Grease) Weight field',
+    'Rubber':'Fill Other Scrap Weight field',
+  };
+}
+
+function calcTotal(){
+  const wta   = +document.getElementById('se_wt_wta').value||0;
+  const tb    = +document.getElementById('se_wt_tb').value||0;
+  const ms    = +document.getElementById('se_wt_ms').value||0;
+  const nf    = +document.getElementById('se_wt_nf').value||0;
+  const other = +document.getElementById('se_wt_other').value||0;
+  const total = +(wta+tb+ms+nf+other).toFixed(3);
+  document.getElementById('se_wt_total').value = total||'';
+  const rate  = +document.getElementById('se_rate').value||0;
+  const amt   = rate && total ? Math.round(rate*total) : 0;
+  document.getElementById('se_amount').value = amt ? '₹'+amt.toLocaleString() : '';
+  const cd = document.getElementById('calcDisplay');
+  if(total>0){ cd.style.display=''; cd.textContent = `Total: ${total} MT ${amt?'• ₹'+amt.toLocaleString():''}` }
+  else cd.style.display='none';
+}
+
+function calcSurveyTotal(){ /* survey doesn't auto-calc */ }
+
+function saveScrapEntry(){
+  const session = currentSession;
+  const d_from  = document.getElementById('se_date_from').value;
+  const d_to    = document.getElementById('se_date_to').value;
+  const type    = document.getElementById('se_type').value;
+  const desc    = document.getElementById('se_desc').value.trim();
+  const lot     = document.getElementById('se_lot').value.trim();
+  const party   = document.getElementById('se_party').value.trim();
+
+  if(!type){ toast('⚠️ Scrap Type select karo'); return; }
+  if(!desc){ toast('⚠️ Description required hai'); return; }
+  if(!party){ toast('⚠️ Party name required hai'); return; }
+  if(!d_from){ toast('⚠️ Date From required hai'); return; }
+
+  const entry = {
+    id: 'se_'+Date.now(),
+    session, date_from:d_from, date_to:d_to, type, desc,
+    qty_nos:  document.getElementById('se_qty_nos').value||'',
+    qty_sets: document.getElementById('se_qty_sets').value||'',
+    wt_wta:   +document.getElementById('se_wt_wta').value||0,
+    wt_tb:    +document.getElementById('se_wt_tb').value||0,
+    wt_ms:    +document.getElementById('se_wt_ms').value||0,
+    wt_nf:    +document.getElementById('se_wt_nf').value||0,
+    wt_other: +document.getElementById('se_wt_other').value||0,
+    wt_total: +document.getElementById('se_wt_total').value||0,
+    lot, party,
+    rate:   +document.getElementById('se_rate').value||0,
+    amount: parseAmount(document.getElementById('se_amount').value),
+    remarks:document.getElementById('se_remarks').value
+  };
+
+  const arr = loadDB(DB_KEYS.scrap);
+  arr.push(entry);
+  saveDB(DB_KEYS.scrap, arr);
+  toast('✓ Scrap entry saved! Dashboard update ho gaya.');
+  clearScrapForm();
+  renderScrapTable();
+  refreshDashboard();
+  updateSessionCount();
+}
+
+function parseAmount(v){ return +(String(v).replace(/[₹,]/g,''))||0; }
+
+function clearScrapForm(){
+  ['se_date_from','se_date_to','se_desc','se_qty_nos','se_qty_sets',
+   'se_wt_wta','se_wt_tb','se_wt_ms','se_wt_nf','se_wt_other','se_wt_total',
+   'se_lot','se_party','se_rate','se_amount','se_remarks'].forEach(id=>{
+    document.getElementById(id).value='';
+  });
+  document.getElementById('se_type').value='';
+  document.getElementById('calcDisplay').style.display='none';
+}
+
+function renderScrapTable(){
+  const filter = document.getElementById('scrapFilterSession').value;
+  const d = loadDB(DB_KEYS.scrap);
+  const rows = filter==='all' ? d : d.filter(x=>x.session===filter);
+  const tbody = document.getElementById('scrapTbl');
+  if(!rows.length){ tbody.innerHTML=`<tr><td colspan="11" class="empty-state">No entries yet. Upar form se add karo.</td></tr>`; return; }
+  tbody.innerHTML = rows.slice().reverse().map(r=>`
+    <tr>
+      <td><span class="badge badge-oa">${r.session}</span></td>
+      <td>${fmt(r.date_from)}</td><td>${fmt(r.date_to)}</td>
+      <td><span class="badge badge-auction">${r.type}</span></td>
+      <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.desc}">${r.desc}</td>
+      <td>${r.wt_total?r.wt_total+' MT':'-'}</td>
+      <td style="font-size:11px;font-family:monospace">${r.lot||'-'}</td>
+      <td>${r.party}</td>
+      <td>${r.rate?'₹'+r.rate.toLocaleString():'-'}</td>
+      <td>${r.amount?'₹'+(r.amount/100000).toFixed(1)+'L':'-'}</td>
+      <td><button class="del-btn" onclick="deleteEntry('scrap','${r.id}')">×</button></td>
+    </tr>`).join('');
+  document.getElementById('scrapEntryCount').textContent = rows.length+' entries';
+}
+
+/* ============ COACH FORM ============ */
+function saveCoachEntry(){
+  const session = currentSession;
+  const coach_no = document.getElementById('ce_coach_no').value.trim();
+  const code     = document.getElementById('ce_code').value;
+  const age      = document.getElementById('ce_age').value;
+
+  if(!coach_no){ toast('⚠️ Coach No. required hai'); return; }
+  if(!code){ toast('⚠️ Coach code/type select karo'); return; }
+  if(!age){ toast('⚠️ Overaged/Underaged select karo'); return; }
+
+  const arr = loadDB(DB_KEYS.coach);
+  const sr  = arr.filter(x=>x.session===session&&x.sr!=='AGG').length+1;
+
+  const entry = {
+    id:'ce_'+Date.now(), session, sr,
+    coach_no, code, cat:document.getElementById('ce_cat').value,
+    age, cond_by:document.getElementById('ce_cond_by').value,
+    rso:document.getElementById('ce_rso').value,
+    rso_date:document.getElementById('ce_rso_date').value,
+    tare:document.getElementById('ce_tare').value,
+    seats:document.getElementById('ce_seats').value,
+    berths:document.getElementById('ce_berths').value,
+    cost:document.getElementById('ce_cost').value,
+    offer_date:document.getElementById('ce_offer_date').value,
+    auc1:document.getElementById('ce_auc1').value,
+    auc2:document.getElementById('ce_auc2').value,
+    sale_order:document.getElementById('ce_sale_order').value,
+    sale_date:document.getElementById('ce_sale_date').value,
+    purchaser:document.getElementById('ce_purchaser').value,
+    del_from:document.getElementById('ce_del_from').value,
+    del_to:document.getElementById('ce_del_to').value,
+    sale_amt:document.getElementById('ce_sale_amt').value,
+    status:document.getElementById('ce_status').value,
+    remarks:document.getElementById('ce_remarks').value
+  };
+
+  arr.push(entry);
+  saveDB(DB_KEYS.coach, arr);
+  toast('✓ Coach entry saved!');
+  clearCoachForm();
+  renderCoachTable();
+  refreshDashboard();
+  updateSessionCount();
+}
+
+function clearCoachForm(){
+  ['ce_coach_no','ce_tare','ce_seats','ce_berths','ce_cost','ce_rso','ce_rso_date',
+   'ce_offer_date','ce_auc1','ce_auc2','ce_sale_order','ce_sale_date',
+   'ce_purchaser','ce_del_from','ce_del_to','ce_sale_amt','ce_remarks'].forEach(id=>{
+    document.getElementById(id).value='';
+  });
+  document.getElementById('ce_code').value='';
+  document.getElementById('ce_age').value='';
+  document.getElementById('ce_cond_by').value='';
+  document.getElementById('ce_status').value='SOLD';
+}
+
+function renderCoachTable(){
+  const filter = document.getElementById('coachFilterSession').value;
+  const d = loadDB(DB_KEYS.coach);
+  const rows = filter==='all' ? d : d.filter(x=>x.session===filter);
+  const tbody = document.getElementById('coachTbl');
+  if(!rows.length){ tbody.innerHTML=`<tr><td colspan="11" class="empty-state">No coach entries.</td></tr>`; return; }
+  tbody.innerHTML = rows.slice().reverse().map(r=>`
+    <tr>
+      <td>${r.sr}</td>
+      <td><span class="badge badge-oa">${r.session}</span></td>
+      <td style="font-weight:600">${r.coach_no}</td>
+      <td><span class="badge badge-auction">${r.code}</span></td>
+      <td>${r.cat||'-'}</td>
+      <td><span class="badge ${r.age==='OVERAGED'?'badge-sold':'badge-ns'}">${r.age||'-'}</span></td>
+      <td>${r.cond_by||'-'}</td>
+      <td style="font-size:11px">${r.rso||'-'}</td>
+      <td>${r.purchaser||'-'}</td>
+      <td><span class="badge ${r.status==='SOLD'?'badge-sold':r.status==='NOT SOLD'?'badge-ns':'badge-auction'}">${r.status}</span></td>
+      <td><button class="del-btn" onclick="deleteEntry('coach','${r.id}')">×</button></td>
+    </tr>`).join('');
+}
+
+/* ============ SURVEY FORM ============ */
+function saveSurveyEntry(){
+  const session = currentSession;
+  const lot  = document.getElementById('sv_lot').value.trim();
+  const desc = document.getElementById('sv_desc').value.trim();
+  const qty  = document.getElementById('sv_qty').value;
+
+  if(!lot){ toast('⚠️ Lot No. required hai'); return; }
+  if(!desc){ toast('⚠️ Description required hai'); return; }
+  if(!qty){ toast('⚠️ Quantity required hai'); return; }
+
+  const arr = loadDB(DB_KEYS.survey);
+  const entry = {
+    id:'sv_'+Date.now(), session, lot,
+    location:document.getElementById('sv_location').value,
+    desc, qty:+qty,
+    unit:document.getElementById('sv_unit').value,
+    wt:+document.getElementById('sv_wt').value||0,
+    offer_date:document.getElementById('sv_offer_date').value,
+    bid:+document.getElementById('sv_bid').value||0,
+    purchaser:document.getElementById('sv_purchaser').value,
+    status:document.getElementById('sv_status').value,
+    category:document.getElementById('sv_category').value,
+    remarks:document.getElementById('sv_remarks').value
+  };
+  arr.push(entry);
+  saveDB(DB_KEYS.survey, arr);
+  toast('✓ Lot entry saved!');
+  clearSurveyForm();
+  renderSurveyTable();
+  refreshDashboard();
+  updateSessionCount();
+}
+
+function clearSurveyForm(){
+  ['sv_lot','sv_location','sv_desc','sv_qty','sv_wt','sv_offer_date','sv_bid','sv_purchaser','sv_remarks'].forEach(id=>{
+    document.getElementById(id).value='';
+  });
+  document.getElementById('sv_unit').value='MT';
+  document.getElementById('sv_status').value='UNDER AUCTION';
+  document.getElementById('sv_category').value='';
+}
+
+function renderSurveyTable(){
+  const filter = document.getElementById('surveyFilterSession').value;
+  const d = loadDB(DB_KEYS.survey);
+  const rows = filter==='all' ? d : d.filter(x=>x.session===filter);
+  const tbody = document.getElementById('surveyTbl');
+  if(!rows.length){ tbody.innerHTML=`<tr><td colspan="11" class="empty-state">No lots entered yet.</td></tr>`; return; }
+  let sr=1;
+  tbody.innerHTML = rows.slice().reverse().map(r=>{
+    const cls = r.status==='SOLD OUT'?'badge-sold':r.status==='NOT SOLD'?'badge-ns':'badge-auction';
+    return `<tr>
+      <td>${sr++}</td>
+      <td><span class="badge badge-oa">${r.session}</span></td>
+      <td style="font-family:monospace;font-size:11px">${r.lot}</td>
+      <td>${r.category||'-'}</td>
+      <td>${r.qty}</td><td>${r.unit}</td>
+      <td>${fmt(r.offer_date)}</td>
+      <td>${r.purchaser||'-'}</td>
+      <td>${r.bid?'₹'+r.bid.toLocaleString():'-'}</td>
+      <td><span class="badge ${cls}">${r.status}</span></td>
+      <td><button class="del-btn" onclick="deleteEntry('survey','${r.id}')">×</button></td>
+    </tr>`;
+  }).join('');
+}
+
+/* ============ DELETE ============ */
+function deleteEntry(type,id){
+  if(!confirm('Ye entry delete karein?')) return;
+  const key = type==='scrap'?DB_KEYS.scrap:type==='coach'?DB_KEYS.coach:DB_KEYS.survey;
+  const arr = loadDB(key).filter(x=>x.id!==id);
+  saveDB(key, arr);
+  if(type==='scrap') renderScrapTable();
+  if(type==='coach') renderCoachTable();
+  if(type==='survey') renderSurveyTable();
+  refreshDashboard();
+  updateSessionCount();
+  toast('Entry deleted.');
+}
+
+/* ============ ALL RECORDS ============ */
+function renderAllRecords(){
+  const d = getData();
+
+  /* KPIs */
+  const totalScrapWT = d.scrap.reduce((a,x)=>a+(+x.wt_total||0),0);
+  const totalAmt     = d.scrap.reduce((a,x)=>a+(+x.amount||0),0);
+  const totalCoaches = d.coach.filter(x=>x.sr!=='AGG').length;
+  const totalLots    = d.survey.length;
+  document.getElementById('recordsKPI').innerHTML = [
+    ['Total Scrap Entries', d.scrap.length, ''],
+    ['Total Weight (MT)', totalScrapWT.toFixed(1)+' MT', ''],
+    ['Total Revenue', '₹'+(totalAmt/10000000).toFixed(2)+' Cr', ''],
+    ['Coach Entries', totalCoaches, ''],
+    ['Auction Lots', totalLots, ''],
+  ].map(([l,v,t])=>`<div class="kpi"><div class="kpi-label">${l}</div><div class="kpi-val">${v}</div><div class="kpi-trend neutral">${t}</div></div>`).join('');
+
+  /* Scrap table */
+  const stbl = document.getElementById('allScrapTbl');
+  stbl.innerHTML = d.scrap.slice().reverse().map(r=>`
+    <tr>
+      <td><span class="badge badge-oa">${r.session}</span></td>
+      <td>${fmt(r.date_from)}</td>
+      <td><span class="badge badge-auction">${r.type}</span></td>
+      <td style="max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${r.desc}</td>
+      <td>${r.wt_total?r.wt_total+' MT':'-'}</td>
+      <td>${r.party}</td>
+      <td>${r.amount?'₹'+r.amount.toLocaleString():'-'}</td>
+    </tr>`).join('') || `<tr><td colspan="7" class="empty-state">No records</td></tr>`;
+
+  /* Coach table */
+  document.getElementById('allCoachTbl').innerHTML = d.coach.slice().reverse().map(r=>`
+    <tr>
+      <td><span class="badge badge-oa">${r.session}</span></td>
+      <td>${r.sr}</td><td style="font-weight:600">${r.coach_no}</td>
+      <td>${r.code}</td><td>${r.cat||'-'}</td>
+      <td><span class="badge ${r.age==='OVERAGED'?'badge-sold':'badge-ns'}">${r.age||'-'}</span></td>
+      <td>${r.purchaser||'-'}</td>
+      <td><span class="badge ${r.status==='SOLD'?'badge-sold':'badge-ns'}">${r.status}</span></td>
+    </tr>`).join('') || `<tr><td colspan="8" class="empty-state">No records</td></tr>`;
+
+  /* Survey table */
+  document.getElementById('allSurveyTbl').innerHTML = d.survey.map(r=>{
+    const cls = r.status==='SOLD OUT'?'badge-sold':r.status==='NOT SOLD'?'badge-ns':'badge-auction';
+    return `<tr>
+      <td><span class="badge badge-oa">${r.session}</span></td>
+      <td style="font-family:monospace;font-size:11px">${r.lot}</td>
+      <td>${r.qty}</td><td>${r.unit}</td>
+      <td>${fmt(r.offer_date)}</td>
+      <td>${r.bid?'₹'+r.bid.toLocaleString():'-'}</td>
+      <td><span class="badge ${cls}">${r.status}</span></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="7" class="empty-state">No records</td></tr>`;
+}
+
+/* ============ DASHBOARD ============ */
+let chartInstances = {};
+
+function refreshAll(){ refreshDashboard(); }
+
+function refreshDashboard(){
+  buildKPIs();
+  buildMainChart();
+  buildPieChart();
+  buildRevChart();
+  buildMonthChart();
+  buildCatChart();
+  buildCoachChart();
+  buildProgBars();
+  buildRecentTable();
+}
+
+/* Aggregate scrap entries by session */
+function aggregateBySession(){
+  const d = loadDB(DB_KEYS.scrap);
+  const result = {};
+  d.forEach(e=>{
+    if(!result[e.session]) result[e.session]={ferrous:0,wta:0,nf:0,misc:0,rev:0,entries:0};
+    const r = result[e.session];
+    /* Categorize weight */
+    const type = e.type||'';
+    if(type==='WTA'||type.includes('WTA')){
+      r.wta += +e.wt_wta||0; r.ferrous += +e.wt_ms||0;
+    } else if(type==='MS Ferrous'||type.includes('Ferrous')||type==='Mix Kachara'){
+      r.ferrous += (+e.wt_ms||0)+(+e.wt_wta||0)+(+e.wt_tb||0);
+    } else if(type==='Turning Boring'){
+      r.ferrous += +e.wt_tb||0;
+    } else if(type==='Non Ferrous'){
+      r.nf += +e.wt_nf||0;
+    } else {
+      r.misc += +e.wt_other||0;
+    }
+    r.nf   += +e.wt_nf||0;
+    r.rev  += +e.amount||0;
+    r.entries++;
+  });
+  return result;
+}
+
+/* Merge user data with historical data */
+function getMergedData(){
+  const userAgg = aggregateBySession();
+  const merged  = {...HIST_YEAR};
+  Object.keys(userAgg).forEach(sess=>{
+    const u = userAgg[sess];
+    if(merged[sess]){
+      /* Add NEW (non-seed) user entries on top of historical */
+      const seedIds = SEED_SCRAP.map(x=>x.id);
+      const userNew = loadDB(DB_KEYS.scrap).filter(x=>x.session===sess && !seedIds.includes(x.id));
+      if(userNew.length){
+        const extra = {ferrous:0,wta:0,nf:0,misc:0,rev:0};
+        userNew.forEach(e=>{
+          extra.ferrous += (+e.wt_ms||0)+(+e.wt_wta||0)+(+e.wt_tb||0);
+          extra.wta     += +e.wt_wta||0;
+          extra.nf      += +e.wt_nf||0;
+          extra.misc    += +e.wt_other||0;
+          extra.rev     += +e.amount||0;
+        });
+        merged[sess] = {
+          ferrous: merged[sess].ferrous + extra.ferrous,
+          wta:     merged[sess].wta + extra.wta,
+          nf:      merged[sess].nf + extra.nf,
+          misc:    merged[sess].misc + extra.misc,
+          rev:     merged[sess].rev + (extra.rev/100000),
+          pcv:     merged[sess].pcv, ocv: merged[sess].ocv
+        };
+      }
+    } else {
+      /* Brand new session */
+      merged[sess] = {
+        ferrous: u.ferrous, wta: u.wta, nf: u.nf, misc: u.misc,
+        rev: u.rev/100000, pcv:0, ocv:0
+      };
+    }
+  });
+
+  /* Also pull coach entries for new sessions */
+  const coaches = loadDB(DB_KEYS.coach);
+  coaches.filter(x=>x.sr!=='AGG').forEach(c=>{
+    if(!merged[c.session]) merged[c.session]={ferrous:0,wta:0,nf:0,misc:0,rev:0,pcv:0,ocv:0};
+    if(c.cat==='PCV') merged[c.session].pcv++;
+    else merged[c.session].ocv++;
+  });
+
+  return merged;
+}
+
+/* Sorted year keys */
+function getSortedYears(data){
+  return Object.keys(data).sort((a,b)=>{
+    const ya = parseInt(a.split('-')[0]);
+    const yb = parseInt(b.split('-')[0]);
+    return ya-yb;
+  });
+}
+
+/* ---- KPIs ---- */
+function buildKPIs(){
+  const d    = getMergedData();
+  const sess = currentSession;
+  const cur  = d[sess]||{ferrous:0,wta:0,nf:0,misc:0,rev:0,pcv:0,ocv:0};
+  const total= +(cur.ferrous+cur.wta+cur.nf+cur.misc).toFixed(1);
+
+  /* Find previous session */
+  const years = getSortedYears(d);
+  const idx = years.indexOf(sess);
+  const prev = idx>0 ? d[years[idx-1]] : null;
+  const prevTotal = prev ? +(prev.ferrous+prev.wta+prev.nf+prev.misc).toFixed(1) : 0;
+  const pct = prevTotal ? (((total-prevTotal)/prevTotal)*100).toFixed(1) : null;
+
+  const coachData = loadDB(DB_KEYS.coach);
+  const newCoaches = coachData.filter(x=>x.session===sess&&x.sr!=='AGG').length;
+  const aggCoach   = coachData.find(x=>x.session===sess&&x.sr==='AGG');
+  const aggPCV     = aggCoach ? cur.pcv : newCoaches;
+  const totalCoachSess = (cur.pcv||0)+(cur.ocv||0)||newCoaches;
+
+  const surveyData = loadDB(DB_KEYS.survey);
+  const survSess   = surveyData.filter(x=>x.session===sess);
+  const underAuction = survSess.filter(x=>x.status==='UNDER AUCTION').length;
+  const soldOut    = survSess.filter(x=>x.status==='SOLD OUT').length;
+
+  const mpData    = typeof loadMP==='function' ? loadMP().filter(x=>x.session===sess) : [];
+  const mpCount   = (HIST_YEAR[sess]?.mp_mt||0) > 0 ? HIST_YEAR[sess].mp_mt+' MT' : (mpData.length+(HIST_YEAR[sess]?.mp_mt||0))+(mpData.length?'+'+mpData.length+' new':'')+' nos.';
+  const mpRevenue = mpData.reduce((a,x)=>a+(+x.amount||0),0) + (HIST_YEAR[sess]?.mp_rs||0);
+
+  const grid = document.getElementById('kpiGrid');
+  grid.innerHTML = [
+    {l:'Total disposal — '+sess, v:total+' MT', t:pct?`${pct>0?'↑':'↓'} ${Math.abs(pct)}% vs prev. year`:'First session', c:pct>0?'up':'neutral'},
+    {l:'Revenue — '+sess, v:'₹'+cur.rev.toFixed(1)+' L', t:prev?`vs ₹${prev.rev.toFixed(0)}L prev`:'', c:''},
+    {l:'MS Ferrous', v:cur.ferrous.toFixed(1)+' MT', t:'', c:''},
+    {l:'WTA Scrap', v:cur.wta.toFixed(1)+' MT', t:'Wheel / Tyre / Axle', c:''},
+    {l:'Non-Ferrous', v:cur.nf.toFixed(1)+' MT', t:'', c:''},
+    {l:'M&amp;P Items — '+sess, v:mpCount, t:mpRevenue?'₹'+mpRevenue.toLocaleString():'Condemned items', c:'neutral'},
+    {l:'Coaches — '+sess, v:totalCoachSess||'-', t:(cur.pcv||0)+' PCV + '+(cur.ocv||0)+' OCV', c:''},
+    {l:'Under Auction', v:underAuction, t:'lots pending', c:underAuction?'down':'up'},
+    {l:'Sold Out Lots', v:soldOut, t:'lots in '+sess, c:'up'},
+  ].map(k=>`
+    <div class="kpi">
+      <div class="kpi-label">${k.l}</div>
+      <div class="kpi-val">${k.v}</div>
+      <div class="kpi-trend ${k.c}">${k.t}</div>
+    </div>`).join('');
+}
+
+/* ---- Charts helper ---- */
+const GC = 'rgba(128,128,128,0.1)';
+const TC = '#999';
+const baseOpts = {
+  responsive:true, maintainAspectRatio:false,
+  plugins:{legend:{display:false}},
+  scales:{
+    x:{grid:{color:GC},ticks:{color:TC,font:{size:11},autoSkip:false,maxRotation:45}},
+    y:{grid:{color:GC},ticks:{color:TC,font:{size:11}}}
+  },
+  animation:{duration:600,easing:'easeInOutQuart'}
+};
+function deepOpts(o={}){ return JSON.parse(JSON.stringify({...baseOpts,...o})); }
+
+function mkChart(id,cfg){
+  if(chartInstances[id]){ chartInstances[id].destroy(); delete chartInstances[id]; }
+  const c = new Chart(document.getElementById(id),cfg);
+  chartInstances[id]=c;
+  return c;
+}
+
+/* ---- Main year chart ---- */
+let mainChartMode = 'total';
+function buildMainChart(){
+  const d = getMergedData();
+  const years = getSortedYears(d);
+  const getData = mode => years.map(y=>{
+    const r = d[y];
+    if(mode==='total') return +((r.ferrous+r.wta+r.nf+r.misc).toFixed(1));
+    if(mode==='ferrous') return +r.ferrous.toFixed(1);
+    if(mode==='wta') return +r.wta.toFixed(1);
+    if(mode==='nf') return +r.nf.toFixed(1);
+    return +r.misc.toFixed(1);
+  });
+  const colors = {total:'#185FA5',ferrous:'#378ADD',wta:'#1D9E75',nf:'#BA7517',misc:'#888780'};
+  const labels = {total:'Total disposal (MT)',ferrous:'MS Ferrous (MT)',wta:'WTA (MT)',nf:'Non-Ferrous (MT)',misc:'Misc (MT)'};
+
+  mkChart('mainChart',{
+    type:'bar',
+    data:{labels:years,datasets:[{label:labels[mainChartMode],data:getData(mainChartMode),backgroundColor:colors[mainChartMode],borderRadius:5}]},
+    options:deepOpts()
+  });
+}
+
+function switchMainChart(mode,btn){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  mainChartMode = mode;
+  buildMainChart();
+  const colors = {total:'#185FA5',ferrous:'#378ADD',wta:'#1D9E75',nf:'#BA7517',misc:'#888780'};
+  const labels = {total:'Total disposal',ferrous:'MS Ferrous',wta:'WTA scrap',nf:'Non-Ferrous',misc:'Misc/Other'};
+  document.getElementById('mainLegend').innerHTML=`<span><span class="ldot" style="background:${colors[mode]}"></span>${labels[mode]} (MT)</span>`;
+}
+
+/* ---- Pie chart ---- */
+function buildPieChart(){
+  const d   = getMergedData();
+  const sess= currentSession;
+  const cur = d[sess]||{ferrous:0,wta:0,nf:0,misc:0};
+  const total= cur.ferrous+cur.wta+cur.nf+cur.misc||1;
+  const vals = [cur.ferrous,cur.wta,cur.nf,cur.misc].map(v=>+v.toFixed(1));
+  const pcts = vals.map(v=>((v/total)*100).toFixed(1));
+  document.getElementById('pieLegend').innerHTML=[
+    ['Ferrous','#185FA5'],['WTA','#1D9E75'],['Non-F','#BA7517'],['Misc','#888780']
+  ].map(([l,c],i)=>`<span><span class="ldot" style="background:${c}"></span>${l} ${pcts[i]}%</span>`).join('');
+  mkChart('pieChart',{
+    type:'doughnut',
+    data:{labels:['Ferrous','WTA','Non-Ferrous','Misc'],datasets:[{data:vals,backgroundColor:['#185FA5','#1D9E75','#BA7517','#888780'],borderWidth:3,hoverOffset:8}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},cutout:'60%',animation:{duration:600}}
+  });
+}
+
+/* ---- Revenue trend ---- */
+function buildRevChart(){
+  const d = getMergedData();
+  const years = getSortedYears(d).filter(y=>d[y].rev>0);
+  mkChart('revChart',{
+    type:'line',
+    data:{labels:years,datasets:[{label:'Revenue (₹L)',data:years.map(y=>+d[y].rev.toFixed(1)),borderColor:'#D85A30',backgroundColor:'rgba(216,90,48,0.07)',fill:true,pointBackgroundColor:'#D85A30',pointRadius:5,tension:0.35}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:GC},ticks:{color:TC,font:{size:11},autoSkip:false,maxRotation:45}},y:{grid:{color:GC},ticks:{color:TC,font:{size:11},callback:v=>'₹'+v+'L'}}},animation:{duration:600}}
+  });
+}
+
+/* ---- Monthly chart for current session ---- */
+function buildMonthChart(){
+  const MONTHS = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
+  const MKEYS  = ['04','05','06','07','08','09','10','11','12','01','02','03'];
+  const sess   = currentSession;
+  const sessYear= parseInt(sess.split('-')[0]);
+
+  const scraps = loadDB(DB_KEYS.scrap).filter(x=>x.session===sess);
+  const monthly = MKEYS.map((mk,i)=>{
+    const yr = i>=9 ? sessYear+1 : sessYear; // Jan-Mar belong to next calendar year
+    const prefix = yr+'-'+mk;
+    const rows = scraps.filter(x=>(x.date_from||'').startsWith(prefix)||(x.date_to||'').startsWith(prefix));
+    return {
+      ferrous: rows.reduce((a,x)=>a+(+x.wt_ms||0)+(+x.wt_tb||0)+(x.type==='WTA'?0:(+x.wt_wta||0)),0),
+      wta:     rows.reduce((a,x)=>a+(x.type==='WTA'?(+x.wt_wta||0):0),0),
+      nf:      rows.reduce((a,x)=>a+(+x.wt_nf||0),0),
+      misc:    rows.reduce((a,x)=>a+(+x.wt_other||0),0),
+    };
+  });
+  mkChart('monthChart',{
+    type:'bar',
+    data:{labels:MONTHS,datasets:[
+      {label:'Ferrous',data:monthly.map(m=>+m.ferrous.toFixed(1)),backgroundColor:'#185FA5',stack:'m',borderRadius:3},
+      {label:'WTA',    data:monthly.map(m=>+m.wta.toFixed(1)),    backgroundColor:'#1D9E75',stack:'m',borderRadius:3},
+      {label:'NF',     data:monthly.map(m=>+m.nf.toFixed(1)),     backgroundColor:'#BA7517',stack:'m',borderRadius:3},
+      {label:'Misc',   data:monthly.map(m=>+m.misc.toFixed(1)),   backgroundColor:'#888780',stack:'m',borderRadius:3},
+    ]},
+    options:{...deepOpts(),scales:{x:{stacked:true,grid:{color:GC},ticks:{color:TC,font:{size:11},autoSkip:false}},y:{stacked:true,grid:{color:GC},ticks:{color:TC,font:{size:11}}}}}
+  });
+}
+
+/* ---- Category all years ---- */
+function buildCatChart(){
+  const d = getMergedData();
+  const years = getSortedYears(d);
+  mkChart('catChart',{
+    type:'bar',
+    data:{labels:years,datasets:[
+      {label:'Ferrous',data:years.map(y=>+d[y].ferrous.toFixed(1)),backgroundColor:'#185FA5',borderRadius:3},
+      {label:'WTA',    data:years.map(y=>+d[y].wta.toFixed(1)),    backgroundColor:'#1D9E75',borderRadius:3},
+      {label:'NF',     data:years.map(y=>+d[y].nf.toFixed(1)),     backgroundColor:'#BA7517',borderRadius:3},
+    ]},
+    options:deepOpts()
+  });
+}
+
+/* ---- Coach chart ---- */
+function buildCoachChart(){
+  const d = getMergedData();
+  const years = getSortedYears(d);
+  mkChart('coachChart',{
+    type:'bar',
+    data:{labels:years,datasets:[
+      {label:'PCV',data:years.map(y=>d[y].pcv||0),backgroundColor:'#185FA5',stack:'c',borderRadius:3},
+      {label:'OCV',data:years.map(y=>d[y].ocv||0),backgroundColor:'#E24B4A',stack:'c',borderRadius:3},
+    ]},
+    options:{...deepOpts(),scales:{x:{stacked:true,grid:{color:GC},ticks:{color:TC,font:{size:10},autoSkip:false,maxRotation:45}},y:{stacked:true,grid:{color:GC},ticks:{color:TC,font:{size:11}}}}}
+  });
+}
+
+/* ---- Progress bars ---- */
+function buildProgBars(){
+  const d    = getMergedData();
+  const sess = currentSession;
+  const cur  = d[sess]||{ferrous:0,wta:0,nf:0,misc:0,rev:0,pcv:0,ocv:0};
+  const years= getSortedYears(d);
+  const idx  = years.indexOf(sess);
+  const prev = idx>0 ? d[years[idx-1]] : null;
+
+  const progs = [
+    {l:'MS Ferrous vs prev year', val:`${cur.ferrous.toFixed(1)} MT`, pct: prev&&prev.ferrous?Math.min(100,Math.round((cur.ferrous/prev.ferrous)*100)):100, c:'#185FA5'},
+    {l:'WTA vs prev year',        val:`${cur.wta.toFixed(1)} MT`,     pct: prev&&prev.wta?Math.min(100,Math.round((cur.wta/prev.wta)*100)):100,     c:'#1D9E75'},
+    {l:'Revenue vs prev year',    val:`₹${cur.rev.toFixed(1)}L`,      pct: prev&&prev.rev?Math.min(100,Math.round((cur.rev/prev.rev)*100)):100,     c:'#D85A30'},
+    {l:'Coaches condemned',       val:`${(cur.pcv||0)+(cur.ocv||0)} coaches`, pct:65, c:'#BA7517'},
+  ];
+
+  const sec = document.getElementById('progSection');
+  sec.innerHTML = progs.map(p=>`
+    <div class="prog-item">
+      <div class="prog-hd"><span style="color:var(--text2)">${p.l}</span><span style="font-weight:500">${p.val}</span></div>
+      <div class="prog-track"><div class="prog-fill" style="width:0%;background:${p.c}" data-pct="${p.pct}"></div></div>
+    </div>`).join('');
+  setTimeout(()=>{ document.querySelectorAll('.prog-fill').forEach(el=>{ el.style.width=el.dataset.pct+'%'; }); },200);
+}
+
+/* ---- Recent table ---- */
+function buildRecentTable(){
+  const d = getData();
+  const all = [
+    ...d.scrap.map(x=>({session:x.session,type:'Scrap',date:x.date_from,desc:x.desc,qty:x.wt_total?x.wt_total+' MT':'',amt:x.amount})),
+    ...d.coach.filter(x=>x.sr!=='AGG').map(x=>({session:x.session,type:'Coach',date:x.rso_date,desc:'Coach '+x.coach_no+' ('+x.code+')',qty:'',amt:''})),
+    ...d.survey.map(x=>({session:x.session,type:'Lot',date:x.offer_date,desc:x.lot+': '+x.desc.slice(0,50),qty:x.qty+' '+x.unit,amt:x.bid})),
+  ].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,10);
+
+  document.getElementById('recentTbl').innerHTML = all.map(r=>`
+    <tr>
+      <td><span class="badge badge-oa">${r.session}</span></td>
+      <td><span class="badge ${r.type==='Scrap'?'badge-sold':r.type==='Coach'?'badge-auction':'badge-ns'}">${r.type}</span></td>
+      <td>${fmt(r.date)}</td>
+      <td style="max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.desc}</td>
+      <td>${r.qty||'-'}</td>
+      <td>${r.amt?'₹'+Number(r.amt).toLocaleString():'-'}</td>
+    </tr>`).join('') || `<tr><td colspan="6" class="empty-state">No entries yet.</td></tr>`;
+}
+
+/* ============ SESSION FILTERS ============ */
+function populateSessionFilters(){
+  const d = getData();
+  const allSessions = [...new Set([
+    ...Object.keys(HIST_YEAR),
+    ...d.scrap.map(x=>x.session),
+    ...d.coach.map(x=>x.session),
+    ...d.survey.map(x=>x.session),
+    currentSession
+  ])].sort().reverse();
+
+  ['scrapFilterSession','coachFilterSession','surveyFilterSession'].forEach(id=>{
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = `<option value="all">All Sessions</option>`+
+      allSessions.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${s}</option>`).join('');
+  });
+  const mpSel = document.getElementById('mpFilterSession');
+  if(mpSel){ const cur=mpSel.value; mpSel.innerHTML=`<option value="all">All Sessions</option>`+allSessions.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${s}</option>`).join(''); }
+}
+
+/* ============ EXPORT ============ */
+function exportData(){
+  const d = getData();
+  const mp = typeof loadMP==='function' ? loadMP() : [];
+  const blob = new Blob([JSON.stringify({...d, mp_items:mp},null,2)],{type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'BVP_Scrap_Data_'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
+  toast('Data exported as JSON (includes M&P items)!');
+}
+
+/* ============ TOAST ============ */
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3000); }
+
+/* ============ UTILS ============ */
+function fmt(d){ if(!d) return '-'; try{const dt=new Date(d); return dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'})}catch{return d} }
+
+/* ============ INIT ============ */
+document.addEventListener('DOMContentLoaded',()=>{
+  applySession();
+  document.getElementById('sessionSelect').value = currentSession;
+  document.getElementById('se_session').value  = currentSession;
+  document.getElementById('ce_session').value  = currentSession;
+  document.getElementById('sv_session').value  = currentSession;
+  populateSessionFilters();
+  refreshDashboard();
+});
+</script>
+<script>
+/* ===== MONTHLY DATA (from Excel — all 3 sessions) ===== */
+const MONTHLY_DATA = {
+  '2023-24':{
+    months:['Apr-23','May-23','Jun-23','Jul-23','Aug-23','Sep-23','Oct-23','Nov-23','Dec-23','Jan-24','Feb-24','Mar-24'],
+    ferrous:[174.4,0,383,2,43.911,307.625,285,240.524,42.1,199.03,87.107,214],
+    wta:[120.59,0,161.89,81.24,110.83,0,82.155,0,81.75,112.86,82.41,163],
+    nf:[79.74,18.3,0,0,130.019,0,0,6.318,97.617,0,47.4,14.093],
+    misc:[0,11.678,0,0,4,0,30.185,115,0,12.6,280,200],
+    mp_mt:[10.11,0,0,0,0,0,0,0,0,4.317,7.927,3.717],
+    rs_f:[6291992,0,14018587,76858,1460702,12264131.75,9739997.4,7673214.41,1588260.9,7137940,4516420,7597641],
+    rs_w:[4473191.39,0,5250578.37,2634856.92,3594549.39,0,2664533.12,0,2651397.75,3660388,2951008.65,5286579],
+    rs_nf:[8399200,3000000,0,0,13723961,0,0,639387,12216148.5,0,4864000,1367261],
+    rs_m:[0,259483.84,0,0,118752,0,492594,202500,0,186379,1197550,250400],
+    mp_rs:[360000,0,0,0,0,0,0,0,0,451570,474595,347838]
+  },
+  '2024-25':{
+    months:['Apr-24','May-24','Jun-24','Jul-24','Aug-24','Sep-24','Oct-24','Nov-24','Dec-24','Jan-25','Feb-25','Mar-25'],
+    ferrous:[249,94.625,238.345,25,45,56.95,89.59,160.92,242.12,32.73,23.76,219.895],
+    wta:[80.44,123.15,82.285,125.35,124.885,77.55,81.79,140.26,122.4,125.62,166.55,41.77],
+    nf:[5.74,0,60.786,0,7.44,85.181,0,0,8,65.12,6.528,87.124],
+    misc:[19,0,0,25,0,0,15.2,32,33.1,8,150,5],
+    mp_mt:[0,0,0,0,0,0,0,0,0,0,0,0],
+    rs_f:[7741547.2,3133903,8477157,689975,1338875,2820350,2360765,5410770,8345520,879877.7,385476,5146333],
+    rs_w:[2608910.52,3994123.95,2668749.41,4065476.55,4050395,2515179.15,2652695,4549052,3888328.6,3902653.92,5576060.73,1631327.35],
+    rs_nf:[934843,0,7135512,0,1407600,9397690,0,0,1552000,7712500,1180140,8676360],
+    rs_m:[93800,0,0,75775,0,0,146748,57200,610055.2,78216,469350,0],
+    mp_rs:[0,0,0,0,0,0,0,0,0,0,0,0]
+  },
+  '2025-26':{
+    months:['Apr-25','May-25','Jun-25','Jul-25','Aug-25','Sep-25','Oct-25','Nov-25','Dec-25','Jan-26','Feb-26','Mar-26'],
+    ferrous:[261,6,233.315,235,117.6,398.2,182.818,472,333,43.673,441,14.2],
+    wta:[41.75,207.96,166.22,122.17,164.45,84.36,84.17,81.13,208.11,162.95,166.285,118.79],
+    nf:[0,0,3.52,91.811,0,83.862,0,0,13.238,8.482,120,0],
+    misc:[10,20,0,0,5,114.7,0,195,0,37.16,20,5],
+    mp_mt:[0,0,0,0,0,0,0,0,0,0,0,0],
+    rs_f:[15403327,240492,7816595.24,10802775,4166786,12369990,9165428,12463345,9328739,2059810.56,14765561,298610],
+    rs_w:[1210750,6030840,5066202.22,3542930,5011200,2446440,2440930,2352770,6281189.88,4969299.52,4822265,3444910],
+    rs_nf:[0,0,687500,10004463,0,10370212,0,0,2380324,1596120,13396030,0],
+    rs_m:[66250,22000,0,0,75775,367402.4,0,304600,0,634342.84,32000,143330],
+    mp_rs:[0,0,0,0,0,0,0,0,0,0,0,120750]
+  }
+};
+
+const TARGETS = {
+  '2023-24':{fw:903,nf:175,misc:5,total:1078,ach_fw:2975.422,ach_nf:393.487,ach_misc:653.463,ach_total:4022.372},
+  '2024-25':{fw:903,nf:175,misc:5,total:1078,ach_fw:2769.985,ach_nf:325.919,ach_misc:287.3,ach_total:3383.204},
+  '2025-26':{fw:903,nf:175,misc:5,total:1078,ach_fw:4346.151,ach_nf:320.913,ach_misc:406.86,ach_total:5073.924}
+};
+
+/* ===== M&P STORAGE ===== */
+const DB_MP = 'bvp_mp_items';
+function loadMP(){ try{return JSON.parse(localStorage.getItem(DB_MP)||'[]')}catch{return[]} }
+function saveMP(arr){ localStorage.setItem(DB_MP,JSON.stringify(arr)) }
+
+/* ===== M&P FORM ===== */
+function calcMPTotal(){
+  const qty=+document.getElementById('mp_qty').value||0;
+  const wt=+document.getElementById('mp_wt').value||0;
+  const rate=+document.getElementById('mp_rate').value||0;
+  const base=wt>0?wt:qty;
+  const amt=rate&&base?Math.round(rate*base):0;
+  document.getElementById('mp_amount').value=amt?'₹'+amt.toLocaleString():'';
+}
+
+function saveMPEntry(){
+  const session=currentSession;
+  const item=document.getElementById('mp_item').value.trim();
+  const qty=document.getElementById('mp_qty').value;
+  if(!item){toast('⚠️ Item description required hai');return;}
+  if(!qty){toast('⚠️ Quantity required hai');return;}
+  const entry={
+    id:'mp_'+Date.now(),session,
+    date:document.getElementById('mp_date').value,
+    month:document.getElementById('mp_month').value,
+    item,qty:+qty,
+    wt:+document.getElementById('mp_wt').value||0,
+    location:document.getElementById('mp_location').value,
+    cond_by:document.getElementById('mp_cond_by').value,
+    lot:document.getElementById('mp_lot').value,
+    party:document.getElementById('mp_party').value,
+    rate:+document.getElementById('mp_rate').value||0,
+    amount:parseAmount(document.getElementById('mp_amount').value),
+    status:document.getElementById('mp_status').value,
+    remarks:document.getElementById('mp_remarks').value
+  };
+  const arr=loadMP(); arr.push(entry); saveMP(arr);
+  toast('✓ M&P entry saved! Summary table update ho gaya.');
+  clearMPForm(); renderMPTable(); refreshDashboard(); updateSessionCount();
+}
+
+function clearMPForm(){
+  ['mp_date','mp_item','mp_qty','mp_wt','mp_location','mp_lot','mp_party','mp_rate','mp_amount','mp_remarks'].forEach(id=>{document.getElementById(id).value='';});
+  document.getElementById('mp_cond_by').value='';
+  document.getElementById('mp_status').value='SOLD';
+}
+
+function renderMPTable(){
+  const filter=document.getElementById('mpFilterSession').value;
+  const d=loadMP();
+  const rows=filter==='all'?d:d.filter(x=>x.session===filter);
+  const tbody=document.getElementById('mpTbl');
+  if(!rows.length){tbody.innerHTML=`<tr><td colspan="11" class="empty-state">No M&P entries yet. Upar form se add karo.</td></tr>`;return;}
+  const MN={'04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec','01':'Jan','02':'Feb','03':'Mar'};
+  tbody.innerHTML=rows.slice().reverse().map(r=>`
+    <tr>
+      <td><span class="badge badge-oa">${r.session}</span></td>
+      <td>${fmt(r.date)}</td>
+      <td>${MN[r.month]||r.month}</td>
+      <td style="font-weight:500">${r.item}</td>
+      <td>${r.qty}</td>
+      <td>${r.wt||'—'}</td>
+      <td style="font-size:11px;font-family:monospace">${r.lot||'—'}</td>
+      <td>${r.party||'—'}</td>
+      <td>${r.amount?'₹'+r.amount.toLocaleString():'—'}</td>
+      <td><span class="badge ${r.status==='SOLD'?'badge-sold':r.status==='NOT SOLD'?'badge-ns':'badge-auction'}">${r.status}</span></td>
+      <td><button class="del-btn" onclick="deleteMPEntry('${r.id}')">×</button></td>
+    </tr>`).join('');
+}
+
+function deleteMPEntry(id){
+  if(!confirm('Delete this M&P entry?'))return;
+  const arr=loadMP().filter(x=>x.id!==id);
+  saveMP(arr); renderMPTable(); refreshDashboard(); toast('M&P entry deleted.');
+}
+
+/* ===== SUMMARY TABLE ===== */
+function showSummaryView(){
+  const d=getData();
+  const allSess=[...new Set([...Object.keys(MONTHLY_DATA),...d.scrap.map(x=>x.session),...loadMP().map(x=>x.session),currentSession])].sort().reverse();
+  const tabs=document.getElementById('sumSessTabs');
+  tabs.innerHTML=allSess.map((s,i)=>`<button class="sum-stab ${i===0?'on':''}" onclick="switchSummarySession('${s}',this)">${s}</button>`).join('');
+  if(allSess.length) renderSummaryForSession(allSess[0]);
+}
+
+function switchSummarySession(sess,btn){
+  document.querySelectorAll('.sum-stab').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderSummaryForSession(sess);
+}
+
+function renderSummaryForSession(sess){
+  const hasMD=!!MONTHLY_DATA[sess];
+  const mpEntries=loadMP().filter(x=>x.session===sess);
+  const scrapEntries=loadDB(DB_KEYS.scrap).filter(x=>x.session===sess);
+  const MK=['04','05','06','07','08','09','10','11','12','01','02','03'];
+  const ML=['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
+
+  let mo=ML.map(m=>({m,f:0,w:0,nf:0,misc:0,mp:0,rf:0,rw:0,rnf:0,rm:0,rmp:0}));
+
+  if(hasMD){
+    const md=MONTHLY_DATA[sess];
+    mo.forEach((r,i)=>{
+      r.f=md.ferrous[i]||0; r.w=md.wta[i]||0; r.nf=md.nf[i]||0;
+      r.misc=md.misc[i]||0; r.mp=md.mp_mt[i]||0;
+      r.rf=md.rs_f[i]||0; r.rw=md.rs_w[i]||0; r.rnf=md.rs_nf[i]||0;
+      r.rm=md.rs_m[i]||0; r.rmp=md.mp_rs[i]||0;
+    });
+  } else {
+    const seedIds=SEED_SCRAP.map(x=>x.id);
+    scrapEntries.filter(x=>!seedIds.includes(x.id)).forEach(e=>{
+      const idx=MK.indexOf((e.date_from||'').slice(5,7));
+      if(idx<0)return;
+      const t=e.type||'';
+      if(t==='WTA'){mo[idx].w+=+e.wt_wta||0;}
+      else if(t==='Non Ferrous'){mo[idx].nf+=+e.wt_nf||0;}
+      else{mo[idx].f+=(+e.wt_ms||0)+(+e.wt_wta||0)+(+e.wt_tb||0);}
+      mo[idx].misc+=+e.wt_other||0;
+      mo[idx].rf+=+e.amount||0;
+    });
+  }
+
+  mpEntries.forEach(e=>{
+    const idx=MK.indexOf(e.month);
+    if(idx>=0){mo[idx].mp+=+e.wt||0; mo[idx].rmp+=+e.amount||0;}
+  });
+
+  const tot=mo.reduce((a,r)=>({
+    f:a.f+r.f,w:a.w+r.w,nf:a.nf+r.nf,misc:a.misc+r.misc,mp:a.mp+r.mp,
+    rf:a.rf+r.rf,rw:a.rw+r.rw,rnf:a.rnf+r.rnf,rm:a.rm+r.rm,rmp:a.rmp+r.rmp
+  }),{f:0,w:0,nf:0,misc:0,mp:0,rf:0,rw:0,rnf:0,rm:0,rmp:0});
+  const totMT=+(tot.f+tot.w+tot.nf+tot.misc).toFixed(3);
+  const totRS=tot.rf+tot.rw+tot.rnf+tot.rm;
+
+  const cr=v=>'\u20B9'+(v/10000000).toFixed(2)+' Cr';
+  const n=v=>v?+(+v).toFixed(3):'\u2014';
+  const r=v=>v?Math.round(v).toLocaleString('en-IN'):'\u2014';
+
+  const kpiHTML='<div class="sum-kpi-wrap">'
+    +'<div class="sum-kpi-box"><div class="sum-kpi-l">MS Ferrous</div><div class="sum-kpi-v">'+tot.f.toFixed(1)+' MT</div><div class="sum-kpi-s">'+cr(tot.rf)+'</div></div>'
+    +'<div class="sum-kpi-box"><div class="sum-kpi-l">WTA</div><div class="sum-kpi-v">'+tot.w.toFixed(1)+' MT</div><div class="sum-kpi-s">'+cr(tot.rw)+'</div></div>'
+    +'<div class="sum-kpi-box"><div class="sum-kpi-l">Non-Ferrous</div><div class="sum-kpi-v">'+tot.nf.toFixed(1)+' MT</div><div class="sum-kpi-s">'+cr(tot.rnf)+'</div></div>'
+    +'<div class="sum-kpi-box"><div class="sum-kpi-l">Misc</div><div class="sum-kpi-v">'+tot.misc.toFixed(1)+' MT</div><div class="sum-kpi-s">'+cr(tot.rm)+'</div></div>'
+    +'<div class="sum-kpi-box" style="border-color:var(--amber)"><div class="sum-kpi-l" style="color:var(--amber)">M&amp;P Items</div><div class="sum-kpi-v" style="color:var(--amber)">'+(tot.mp>0?tot.mp.toFixed(3)+' MT':mpEntries.length+' nos.')+'</div><div class="sum-kpi-s">'+(tot.rmp>0?'\u20B9'+tot.rmp.toLocaleString('en-IN'):'\u2014')+'</div></div>'
+    +'<div class="sum-kpi-box" style="border-color:var(--accent)"><div class="sum-kpi-l">Grand Total</div><div class="sum-kpi-v">'+totMT+' MT</div><div class="sum-kpi-s">'+cr(totRS)+'</div></div>'
+    +'</div>';
+
+  let rows='';
+  mo.forEach(function(x){
+    const tt=+(x.f+x.w+x.nf+x.misc).toFixed(3);
+    const tr=x.rf+x.rw+x.rnf+x.rm;
+    rows+='<tr class="sum-tr">'
+      +'<td class="sum-td sum-td-left">'+x.m+'</td>'
+      +'<td class="sum-td">'+n(x.f)+'</td>'
+      +'<td class="sum-td">'+n(x.w)+'</td>'
+      +'<td class="sum-td">'+n(x.nf)+'</td>'
+      +'<td class="sum-td">'+n(x.misc)+'</td>'
+      +'<td class="sum-td" style="font-weight:600">'+n(tt)+'</td>'
+      +'<td class="sum-td sum-mp-td">'+(x.mp>0?+(x.mp).toFixed(3):'\u2014')+'</td>'
+      +'<td class="sum-td">'+r(x.rf)+'</td>'
+      +'<td class="sum-td">'+r(x.rw)+'</td>'
+      +'<td class="sum-td">'+r(x.rnf)+'</td>'
+      +'<td class="sum-td">'+r(x.rm)+'</td>'
+      +'<td class="sum-td" style="font-weight:600">'+r(tr)+'</td>'
+      +'<td class="sum-td sum-mp-td">'+(x.rmp>0?r(x.rmp):'\u2014')+'</td>'
+      +'</tr>';
+  });
+
+  const totRow='<tr class="sum-total">'
+    +'<td class="sum-td sum-td-left">Total</td>'
+    +'<td class="sum-td">'+tot.f.toFixed(3)+'</td>'
+    +'<td class="sum-td">'+tot.w.toFixed(3)+'</td>'
+    +'<td class="sum-td">'+tot.nf.toFixed(3)+'</td>'
+    +'<td class="sum-td">'+tot.misc.toFixed(3)+'</td>'
+    +'<td class="sum-td">'+totMT+'</td>'
+    +'<td class="sum-td">'+(tot.mp>0?tot.mp.toFixed(3):'\u2014')+'</td>'
+    +'<td class="sum-td">'+Math.round(tot.rf).toLocaleString('en-IN')+'</td>'
+    +'<td class="sum-td">'+Math.round(tot.rw).toLocaleString('en-IN')+'</td>'
+    +'<td class="sum-td">'+Math.round(tot.rnf).toLocaleString('en-IN')+'</td>'
+    +'<td class="sum-td">'+Math.round(tot.rm).toLocaleString('en-IN')+'</td>'
+    +'<td class="sum-td">'+Math.round(totRS).toLocaleString('en-IN')+'</td>'
+    +'<td class="sum-td">'+(tot.rmp>0?Math.round(tot.rmp).toLocaleString('en-IN'):'\u2014')+'</td>'
+    +'</tr>';
+
+  const tgt=TARGETS[sess];
+  let tgtHTML='';
+  if(tgt){
+    const pct=function(a,t){return ((a/t)*100).toFixed(1);};
+    const cls=function(p){return +p>=200?'tgt-good':+p>=100?'tgt-ok':'tgt-bad';};
+    tgtHTML='<div style="padding:14px 18px;border-top:0.5px solid var(--border)">'
+      +'<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">Target vs Achievement</div>'
+      +'<div class="tgt-grid2">'
+      +'<div class="tgt-card2"><div class="tgt-title2">MS Ferrous + WTA + T.B</div><div class="tgt-row2"><span style="color:var(--text3)">Targeted</span><span style="font-weight:500">'+tgt.fw+' MT</span></div><div class="tgt-row2"><span style="color:var(--text3)">Achieved</span><span style="font-weight:500">'+tgt.ach_fw+' MT</span></div><div class="tgt-pct2 '+cls(pct(tgt.ach_fw,tgt.fw))+'">'+pct(tgt.ach_fw,tgt.fw)+'%</div></div>'
+      +'<div class="tgt-card2"><div class="tgt-title2">Non-Ferrous</div><div class="tgt-row2"><span style="color:var(--text3)">Targeted</span><span style="font-weight:500">'+tgt.nf+' MT</span></div><div class="tgt-row2"><span style="color:var(--text3)">Achieved</span><span style="font-weight:500">'+tgt.ach_nf+' MT</span></div><div class="tgt-pct2 '+cls(pct(tgt.ach_nf,tgt.nf))+'">'+pct(tgt.ach_nf,tgt.nf)+'%</div></div>'
+      +'<div class="tgt-card2"><div class="tgt-title2">Misc</div><div class="tgt-row2"><span style="color:var(--text3)">Targeted</span><span style="font-weight:500">'+tgt.misc+' MT</span></div><div class="tgt-row2"><span style="color:var(--text3)">Achieved</span><span style="font-weight:500">'+tgt.ach_misc+' MT</span></div><div class="tgt-pct2 tgt-good">'+pct(tgt.ach_misc,tgt.misc)+'%</div></div>'
+      +'<div class="tgt-card2"><div class="tgt-title2">Total Target</div><div class="tgt-row2"><span style="color:var(--text3)">Targeted</span><span style="font-weight:500">'+tgt.total+' MT</span></div><div class="tgt-row2"><span style="color:var(--text3)">Achieved</span><span style="font-weight:500">'+tgt.ach_total+' MT</span></div><div class="tgt-pct2 '+cls(pct(tgt.ach_total,tgt.total))+'">'+pct(tgt.ach_total,tgt.total)+'%</div></div>'
+      +'</div></div>';
+  }
+
+  document.getElementById('sumContent').innerHTML=
+    '<div class="entries-wrap">'
+    +'<div class="entries-header" style="flex-direction:column;align-items:flex-start;gap:4px">'
+    +'<h3>Mechanical &amp; Electrical Scrap Handed Over / Delivered \u2014 '+sess+'</h3>'
+    +'<p style="font-size:11px;color:var(--text3)">In Metric Ton &amp; In Rs. &nbsp;|&nbsp; M&amp;P items highlighted in amber column</p>'
+    +'</div>'
+    +kpiHTML
+    +'<div style="overflow-x:auto">'
+    +'<table style="min-width:1050px;font-size:12px;border-collapse:collapse;width:100%">'
+    +'<thead>'
+    +'<tr>'
+    +'<th rowspan="2" class="sum-col-hd" style="text-align:left;min-width:55px;vertical-align:middle">Month</th>'
+    +'<th colspan="6" class="sum-grp-hd sum-grp-mt">In Metric Ton</th>'
+    +'<th colspan="6" class="sum-grp-hd sum-grp-rs">In Rs.</th>'
+    +'</tr>'
+    +'<tr>'
+    +'<th class="sum-col-hd">MS Ferrous</th>'
+    +'<th class="sum-col-hd">W.T.A.</th>'
+    +'<th class="sum-col-hd">Non-Ferrous</th>'
+    +'<th class="sum-col-hd">Misc.</th>'
+    +'<th class="sum-col-hd">Total</th>'
+    +'<th class="sum-col-hd sum-mp-hd">M&amp;P Items</th>'
+    +'<th class="sum-col-hd">MS Ferrous</th>'
+    +'<th class="sum-col-hd">W.T.A.</th>'
+    +'<th class="sum-col-hd">Non-Ferrous</th>'
+    +'<th class="sum-col-hd">Misc.</th>'
+    +'<th class="sum-col-hd">Total</th>'
+    +'<th class="sum-col-hd sum-mp-hd">M&amp;P Items</th>'
+    +'</tr>'
+    +'</thead>'
+    +'<tbody>'+rows+totRow+'</tbody>'
+    +'</table>'
+    +'</div>'
+    +tgtHTML
+    +'</div>';
+}
+
+function deleteMPEntry(id){
+  if(!confirm('Delete this M&P entry?'))return;
+  const arr=loadMP().filter(x=>x.id!==id);
+  saveMP(arr); renderMPTable(); refreshDashboard(); toast('M&P entry deleted.');
+}
+
+/* ===== SUMMARY TABLE ===== */
+function showSummaryView(){
+  const d=getData();
+  const allSess=[...new Set([...Object.keys(MONTHLY_DATA),...d.scrap.map(x=>x.session),...loadMP().map(x=>x.session),currentSession])].sort().reverse();
+  const tabs=document.getElementById('sumSessTabs');
+  tabs.innerHTML=allSess.map((s,i)=>`<button class="sum-stab ${i===0?'on':''}" onclick="switchSummarySession('${s}',this)">${s}</button>`).join('');
+  if(allSess.length) renderSummaryForSession(allSess[0]);
+}
+
+function switchSummarySession(sess,btn){
+  document.querySelectorAll('.sum-stab').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderSummaryForSession(sess);
+}
+
+function renderSummaryForSession(sess){
+  const hasMD=!!MONTHLY_DATA[sess];
+  const mp_entries=loadMP().filter(x=>x.session===sess);
+  const scrap_entries=loadDB(DB_KEYS.scrap).filter(x=>x.session===sess);
+  const MONTH_KEYS=['04','05','06','07','08','09','10','11','12','01','02','03'];
+  const MLAB=['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
+  const sessYear=parseInt(sess.split('-')[0]);
+
+  let monthly=MLAB.map(mo=>({mo,ferrous:0,wta:0,nf:0,misc:0,mp_mt:0,rs_f:0,rs_w:0,rs_nf:0,rs_m:0,mp_rs:0}));
+
+  if(hasMD){
+    const md=MONTHLY_DATA[sess];
+    monthly.forEach((m,i)=>{
+      m.ferrous=md.ferrous[i]||0;m.wta=md.wta[i]||0;m.nf=md.nf[i]||0;m.misc=md.misc[i]||0;m.mp_mt=md.mp_mt[i]||0;
+      m.rs_f=md.rs_f[i]||0;m.rs_w=md.rs_w[i]||0;m.rs_nf=md.rs_nf[i]||0;m.rs_m=md.rs_m[i]||0;m.mp_rs=md.mp_rs[i]||0;
+    });
+  } else {
+    const seedIds=SEED_SCRAP.map(x=>x.id);
+    const userNew=scrap_entries.filter(x=>!seedIds.includes(x.id));
+    userNew.forEach(e=>{
+      const mk=(e.date_from||'').slice(5,7);
+      const idx=MONTH_KEYS.indexOf(mk);
+      if(idx<0)return;
+      const t=e.type||'';
+      if(t==='WTA'){monthly[idx].wta+=+e.wt_wta||0;}
+      else if(t==='Non Ferrous'){monthly[idx].nf+=+e.wt_nf||0;}
+      else{monthly[idx].ferrous+=(+e.wt_ms||0)+(+e.wt_wta||0)+(+e.wt_tb||0);}
+      monthly[idx].misc+=+e.wt_other||0;
+      monthly[idx].rs_f+=+e.amount||0;
+    });
+  }
+
+  /* Add M&P entries */
+  mp_entries.forEach(e=>{
+    const idx=MONTH_KEYS.indexOf(e.month);
+    if(idx>=0){monthly[idx].mp_mt+=+e.wt||0;monthly[idx].mp_rs+=+e.amount||0;}
+  });
+
+  /* Totals */
+  const tot=monthly.reduce((a,m)=>({
+    ferrous:a.ferrous+m.ferrous,wta:a.wta+m.wta,nf:a.nf+m.nf,misc:a.misc+m.misc,mp_mt:a.mp_mt+m.mp_mt,
+    rs_f:a.rs_f+m.rs_f,rs_w:a.rs_w+m.rs_w,rs_nf:a.rs_nf+m.rs_nf,rs_m:a.rs_m+m.rs_m,mp_rs:a.mp_rs+m.mp_rs
+  },{ferrous:0,wta:0,nf:0,misc:0,mp_mt:0,rs_f:0,rs_w:0,rs_nf:0,rs_m:0,mp_rs:0});
+  const totMT=tot.ferrous+tot.wta+tot.nf+tot.misc;
+  const totRS=tot.rs_f+tot.rs_w+tot.rs_nf+tot.rs_m;
+
+  const cr=v=>'₹'+(v/10000000).toFixed(2)+' Cr';
+  const fMT=v=>v?(+v).toFixed(3).replace(/\.?0+$/,''):'—';
+  const fRS=v=>v?Math.round(v).toLocaleString('en-IN'):'—';
+
+  const kpi=`<div class="sum-kpi">
+    <div class="sum-kpi-box"><div class="sum-kpi-l">MS Ferrous</div><div class="sum-kpi-v">${tot.ferrous.toFixed(1)} MT</div><div class="sum-kpi-s">${cr(tot.rs_f)}</div></div>
+    <div class="sum-kpi-box"><div class="sum-kpi-l">WTA</div><div class="sum-kpi-v">${tot.wta.toFixed(1)} MT</div><div class="sum-kpi-s">${cr(tot.rs_w)}</div></div>
+    <div class="sum-kpi-box"><div class="sum-kpi-l">Non-Ferrous</div><div class="sum-kpi-v">${tot.nf.toFixed(1)} MT</div><div class="sum-kpi-s">${cr(tot.rs_nf)}</div></div>
+    <div class="sum-kpi-box"><div class="sum-kpi-l">Misc</div><div class="sum-kpi-v">${tot.misc.toFixed(1)} MT</div><div class="sum-kpi-s">${cr(tot.rs_m)}</div></div>
+    <div class="sum-kpi-box" style="border-color:var(--amber)"><div class="sum-kpi-l" style="color:var(--amber)">M&amp;P Items</div><div class="sum-kpi-v" style="color:var(--amber)">${tot.mp_mt>0?tot.mp_mt.toFixed(3)+' MT':mp_entries.length+' nos.'}</div><div class="sum-kpi-s">${tot.mp_rs>0?'₹'+tot.mp_rs.toLocaleString('en-IN'):'—'}</div></div>
+    <div class="sum-kpi-box" style="border-color:var(--accent)"><div class="sum-kpi-l">Grand Total</div><div class="sum-kpi-v">${totMT.toFixed(1)} MT</div><div class="sum-kpi-s">${cr(totRS)}</div></div>
+  </div>`;
+
+  const rows=monthly.map(m=>{
+    const tt=m.ferrous+m.wta+m.nf+m.misc;
+    const tr=m.rs_f+m.rs_w+m.rs_nf+m.rs_m;
+    return `<tr class="sum-tr">
+      <td class="sum-td">${m.mo}</td>
+      <td class="sum-td">${fMT(m.ferrous)}</td><td class="sum-td">${fMT(m.wta)}</td>
+      <td class="sum-td">${fMT(m.nf)}</td><td class="sum-td">${fMT(m.misc)}</td>
+      <td class="sum-td" style="font-weight:600">${fMT(tt)}</td>
+      <td class="sum-td sum-mp-td">${m.mp_mt>0?fMT(m.mp_mt):'—'}</td>
+      <td class="sum-td">${fRS(m.rs_f)}</td><td class="sum-td">${fRS(m.rs_w)}</td>
+      <td class="sum-td">${fRS(m.rs_nf)}</td><td class="sum-td">${fRS(m.rs_m)}</td>
+      <td class="sum-td" style="font-weight:600">${fRS(tr)}</td>
+      <td class="sum-td sum-mp-td">${m.mp_rs>0?fRS(m.mp_rs):'—'}</td>
+    </tr>`;
+  }).join('');
+
+  const totalRow=`<tr class="sum-total">
+    <td class="sum-td">Total</td>
+    <td class="sum-td">${tot.ferrous.toFixed(3)}</td><td class="sum-td">${tot.wta.toFixed(3)}</td>
+    <td class="sum-td">${tot.nf.toFixed(3)}</td><td class="sum-td">${tot.misc.toFixed(3)}</td>
+    <td class="sum-td">${totMT.toFixed(3)}</td>
+    <td class="sum-td">${tot.mp_mt>0?tot.mp_mt.toFixed(3):'—'}</td>
+    <td class="sum-td">${Math.round(tot.rs_f).toLocaleString('en-IN')}</td>
+    <td class="sum-td">${Math.round(tot.rs_w).toLocaleString('en-IN')}</td>
+    <td class="sum-td">${Math.round(tot.rs_nf).toLocaleString('en-IN')}</td>
+    <td class="sum-td">${Math.round(tot.rs_m).toLocaleString('en-IN')}</td>
+    <td class="sum-td">${Math.round(totRS).toLocaleString('en-IN')}</td>
+    <td class="sum-td">${tot.mp_rs>0?Math.round(tot.mp_rs).toLocaleString('en-IN'):'—'}</td>
+  </tr>`;
+
+  const tgt=TARGETS[sess];
+  let tgtHTML='';
+  if(tgt){
+    const pct=(a,t)=>((a/t)*100).toFixed(1);
+    const cls=p=>+p>=200?'tgt-good':+p>=100?'tgt-ok':'tgt-bad';
+    tgtHTML=`<div style="padding:14px 18px;border-top:0.5px solid var(--border)">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">Target vs Achievement</div>
+      <div class="tgt-grid2">
+        <div class="tgt-card2"><div class="tgt-title">MS Ferrous + WTA + T.B</div><div class="tgt-row2"><span style="color:var(--text3)">Targeted</span><span style="font-weight:500">${tgt.fw} MT</span></div><div class="tgt-row2"><span style="color:var(--text3)">Achieved</span><span style="font-weight:500">${tgt.ach_fw} MT</span></div><div class="tgt-pct ${cls(pct(tgt.ach_fw,tgt.fw))}">${pct(tgt.ach_fw,tgt.fw)}%</div></div>
+        <div class="tgt-card2"><div class="tgt-title">Non-Ferrous</div><div class="tgt-row2"><span style="color:var(--text3)">Targeted</span><span style="font-weight:500">${tgt.nf} MT</span></div><div class="tgt-row2"><span style="color:var(--text3)">Achieved</span><span style="font-weight:500">${tgt.ach_nf} MT</span></div><div class="tgt-pct ${cls(pct(tgt.ach_nf,tgt.nf))}">${pct(tgt.ach_nf,tgt.nf)}%</div></div>
+        <div class="tgt-card2"><div class="tgt-title">Misc</div><div class="tgt-row2"><span style="color:var(--text3)">Targeted</span><span style="font-weight:500">${tgt.misc} MT</span></div><div class="tgt-row2"><span style="color:var(--text3)">Achieved</span><span style="font-weight:500">${tgt.ach_misc} MT</span></div><div class="tgt-pct tgt-good">${pct(tgt.ach_misc,tgt.misc)}%</div></div>
+        <div class="tgt-card2"><div class="tgt-title">Total Target</div><div class="tgt-row2"><span style="color:var(--text3)">Targeted</span><span style="font-weight:500">${tgt.total} MT</span></div><div class="tgt-row2"><span style="color:var(--text3)">Achieved</span><span style="font-weight:500">${tgt.ach_total} MT</span></div><div class="tgt-pct ${cls(pct(tgt.ach_total,tgt.total))}">${pct(tgt.ach_total,tgt.total)}%</div></div>
+      </div></div>`;
+  }
+
+  document.getElementById('sumContent').innerHTML=`
+  <div class="entries-wrap">
+    <div class="entries-header" style="flex-direction:column;align-items:flex-start;gap:4px">
+      <h3>Mechanical &amp; Electrical Scrap Handed Over / Delivered — ${sess}</h3>
+      <p style="font-size:11px;color:var(--text3)">In Metric Ton &amp; In Rs. (M&amp;P items highlighted in amber)</p>
+    </div>
+    ${kpi}
+    <div style="overflow-x:auto">
+      <table style="min-width:1100px;font-size:12px;border-collapse:collapse;width:100%">
+        <thead>
+          <tr>
+            <th rowspan="2" class="sum-col-hd" style="text-align:left;min-width:60px">Month &amp; Year</th>
+            <th colspan="6" class="sum-grp-hd sum-grp-mt">In Metric Ton</th>
+            <th colspan="6" class="sum-grp-hd sum-grp-rs">In Rs.</th>
+          </tr>
+          <tr>
+            <th class="sum-col-hd">MS Ferrous</th><th class="sum-col-hd">W.T.A.</th>
+            <th class="sum-col-hd">Non-Ferrous</th><th class="sum-col-hd">Misc.</th>
+            <th class="sum-col-hd">Total</th><th class="sum-col-hd sum-mp-hd">M&amp;P Items</th>
+            <th class="sum-col-hd">MS Ferrous</th><th class="sum-col-hd">W.T.A.</th>
+            <th class="sum-col-hd">Non-Ferrous</th><th class="sum-col-hd">Misc.</th>
+            <th class="sum-col-hd">Total</th><th class="sum-col-hd sum-mp-hd">M&amp;P Items</th>
+          </tr>
+        </thead>
+        <tbody>${rows}${totalRow}</tbody>
+      </table>
+    </div>
+    ${tgtHTML}
+  </div>`;
+}
+
+</script>
+</body>
+</html>

@@ -158,6 +158,25 @@ const BvpSurveyEntrySchema = new mongoose.Schema({
 });
 const BvpSurveyEntry = mongoose.model('BvpSurveyEntry', BvpSurveyEntrySchema);
 
+const BvpMpEntrySchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  session: String,
+  date: String,
+  month: String,
+  item: String,
+  qty: Number,
+  wt: Number,
+  location: String,
+  cond_by: String,
+  lot: String,
+  party: String,
+  rate: Number,
+  amount: Number,
+  status: String,
+  remarks: String
+});
+const BvpMpEntry = mongoose.model('BvpMpEntry', BvpMpEntrySchema);
+
 async function getNextId(model) {
   const last = await model.findOne().sort('-id');
   return last && last.id ? last.id + 1 : 1;
@@ -231,6 +250,7 @@ function makeBvpApi(model) {
 app.use('/api/bvpScrapEntries', makeBvpApi(BvpScrapEntry));
 app.use('/api/bvpCoachEntries', makeBvpApi(BvpCoachEntry));
 app.use('/api/bvpSurveyEntries', makeBvpApi(BvpSurveyEntry));
+app.use('/api/bvpMpEntries', makeBvpApi(BvpMpEntry));
 
 // BVP Seed Data Endpoint
 app.post('/api/bvp/init', async (req, res) => {

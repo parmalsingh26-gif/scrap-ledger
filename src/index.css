@@ -669,6 +669,17 @@
   color: var(--bvp-text3);
 }
 
+/* Target vs Achievement colors */
+.tgt-good { color: var(--bvp-green); }
+.tgt-ok   { color: var(--bvp-amber); }
+.tgt-bad  { color: var(--bvp-red); }
+
+/* Export spinner */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 .bvp-section-title {
   font-size: 11px;
   font-weight: 600;

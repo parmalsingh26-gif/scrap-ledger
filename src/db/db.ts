@@ -126,6 +126,24 @@ export interface BvpSurveyEntry {
   remarks: string;
 }
 
+export interface BvpMpEntry {
+  id: string;
+  session: string;
+  date: string;
+  month: string;
+  item: string;
+  qty: number;
+  wt: number;
+  location: string;
+  cond_by: string;
+  lot: string;
+  party: string;
+  rate: number;
+  amount: number;
+  status: string;
+  remarks: string;
+}
+
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5001/api';
 
 const listeners = new Set<() => void>();
@@ -248,6 +266,11 @@ export const db = {
     toArray: (): Promise<BvpSurveyEntry[]> => apiFetch('/bvpSurveyEntries'),
     add: (data: any): Promise<BvpSurveyEntry> => apiFetch('/bvpSurveyEntries', { method: 'POST', body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch(`/bvpSurveyEntries/${id}`, { method: 'DELETE' }),
+  },
+  bvpMpEntries: {
+    toArray: (): Promise<BvpMpEntry[]> => apiFetch('/bvpMpEntries'),
+    add: (data: any): Promise<BvpMpEntry> => apiFetch('/bvpMpEntries', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: string) => apiFetch(`/bvpMpEntries/${id}`, { method: 'DELETE' }),
   },
   bvpInit: () => apiFetch('/bvp/init', { method: 'POST', body: JSON.stringify({}) }),
   transaction: async (mode: string, tables: any[], fn: () => Promise<void>) => {
