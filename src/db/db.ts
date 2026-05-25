@@ -159,7 +159,10 @@ async function apiFetch(endpoint: string, options?: RequestInit) {
       ...options?.headers
     }
   });
-  if (!res.ok) throw new Error('API Error');
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API Error ${res.status}: ${text}`);
+  }
   const data = await res.json();
   if (options && options.method && options.method !== 'GET') {
     notifyChange();
@@ -279,9 +282,4 @@ export const db = {
   }
 };
 
-// Initialize DB on first load
-apiFetch('/init', { method: 'POST', body: JSON.stringify({}) }).catch(console.error);
-
-// Initialize BVP data on first load
-apiFetch('/bvp/init', { method: 'POST', body: JSON.stringify({}) }).catch(console.error);
-
+// Initialization is handled by individual page loads or components

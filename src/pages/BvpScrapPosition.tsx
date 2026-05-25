@@ -82,10 +82,6 @@ function fmt(d: string): string {
   } catch { return d; }
 }
 
-function parseAmount(v: string): number {
-  return +(String(v).replace(/[₹,]/g, '')) || 0;
-}
-
 /* ========== Toast Component ========== */
 function Toast({ message, show }: { message: string; show: boolean }) {
   return (
@@ -165,7 +161,13 @@ export function BvpScrapPosition() {
     } catch (e) { console.error('Failed to load BVP data:', e); }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { 
+    loadData(); 
+    return () => {
+      Object.values(chartInstances.current).forEach(c => c.destroy());
+      chartInstances.current = {};
+    };
+  }, [loadData]);
 
   /* ===== Auto Calculations ===== */
   const calcWtTotal = () => {
@@ -187,6 +189,7 @@ export function BvpScrapPosition() {
     ...scrapEntries.map(x => x.session),
     ...coachEntries.map(x => x.session),
     ...surveyEntries.map(x => x.session),
+    ...mpEntries.map(x => x.session),
     currentSession
   ])].sort().reverse();
 
@@ -201,7 +204,7 @@ export function BvpScrapPosition() {
 
   /* ===== Merged Data for Charts ===== */
   const getMergedData = useCallback(() => {
-    const merged: Record<string, { ferrous: number; wta: number; nf: number; misc: number; rev: number; pcv: number; ocv: number }> = { ...HIST_YEAR };
+    const merged: Record<string, { ferrous: number; wta: number; nf: number; misc: number; rev: number; pcv: number; ocv: number; mp_mt?: number; mp_rs?: number }> = { ...HIST_YEAR };
 
     // Calculate user-added entries (non-seed) for existing sessions
     Object.keys(merged).forEach(sess => {
@@ -209,9 +212,13 @@ export function BvpScrapPosition() {
       if (userNew.length) {
         const extra = { ferrous: 0, wta: 0, nf: 0, misc: 0, rev: 0 };
         userNew.forEach(e => {
-          extra.ferrous += (+e.wt_ms || 0) + (+e.wt_wta || 0) + (+e.wt_tb || 0);
-          extra.wta += +e.wt_wta || 0;
-          extra.nf += +e.wt_nf || 0;
+          if (e.type === 'WTA') {
+            extra.wta += +e.wt_wta || 0;
+          } else if (e.type === 'Non Ferrous') {
+            extra.nf += +e.wt_nf || 0;
+          } else {
+            extra.ferrous += (+e.wt_ms || 0) + (+e.wt_wta || 0) + (+e.wt_tb || 0);
+          }
           extra.misc += +e.wt_other || 0;
           extra.rev += +e.amount || 0;
         });
@@ -233,9 +240,13 @@ export function BvpScrapPosition() {
         const entries = scrapEntries.filter(e => e.session === sess);
         const r = { ferrous: 0, wta: 0, nf: 0, misc: 0, rev: 0 };
         entries.forEach(e => {
-          r.ferrous += (+e.wt_ms || 0) + (+e.wt_wta || 0) + (+e.wt_tb || 0);
-          r.wta += +e.wt_wta || 0;
-          r.nf += +e.wt_nf || 0;
+          if (e.type === 'WTA') {
+            r.wta += +e.wt_wta || 0;
+          } else if (e.type === 'Non Ferrous') {
+            r.nf += +e.wt_nf || 0;
+          } else {
+            r.ferrous += (+e.wt_ms || 0) + (+e.wt_wta || 0) + (+e.wt_tb || 0);
+          }
           r.misc += +e.wt_other || 0;
           r.rev += +e.amount || 0;
         });
@@ -416,7 +427,9 @@ export function BvpScrapPosition() {
     if (!coachForm.code) { showToast('⚠️ Coach code/type select karo'); return; }
     if (!coachForm.age) { showToast('⚠️ Overaged/Underaged select karo'); return; }
 
-    const sr = coachEntries.filter(x => x.session === currentSession && x.sr !== 'AGG').length + 1;
+    // Calculate the next Sr number safely
+    const sessionCoaches = coachEntries.filter(x => x.session === currentSession && x.sr !== 'AGG');
+    const sr = sessionCoaches.length > 0 ? Math.max(...sessionCoaches.map(c => typeof c.sr === 'number' ? c.sr : 0)) + 1 : 1;
     const entry: BvpCoachEntry = {
       id: 'ce_' + Date.now(),
       session: currentSession,
@@ -548,9 +561,17 @@ export function BvpScrapPosition() {
     if (hasMD) {
       const md = MONTHLY_DATA[sess];
       monthly.forEach((m,i) => { m.ferrous=md.ferrous[i]||0;m.wta=md.wta[i]||0;m.nf=md.nf[i]||0;m.misc=md.misc[i]||0;m.mp_mt=md.mp_mt[i]||0;m.rs_f=md.rs_f[i]||0;m.rs_w=md.rs_w[i]||0;m.rs_nf=md.rs_nf[i]||0;m.rs_m=md.rs_m[i]||0;m.mp_rs=md.mp_rs[i]||0; });
-    } else {
-      sessScrap.filter(e=>!SEED_IDS_SET_EXP.has(e.id)).forEach(e=>{ const idx=MKEYS.indexOf((e.date_from||'').slice(5,7)); if(idx<0)return; if(e.type==='WTA')monthly[idx].wta+=+e.wt_wta||0; else if(e.type==='Non Ferrous')monthly[idx].nf+=+e.wt_nf||0; else monthly[idx].ferrous+=(+e.wt_ms||0)+(+e.wt_wta||0)+(+e.wt_tb||0); monthly[idx].misc+=+e.wt_other||0; monthly[idx].rs_f+=+e.amount||0; });
     }
+    // Always add user entries (non-seed)
+    sessScrap.filter(e=>!SEED_IDS_SET_EXP.has(e.id)).forEach(e=>{
+      const idx=MKEYS.indexOf((e.date_from||'').slice(5,7));
+      if(idx<0)return;
+      const t = e.type || '';
+      if(t==='WTA'){monthly[idx].wta+=+e.wt_wta||0;monthly[idx].rs_w+=+e.amount||0;}
+      else if(t==='Non Ferrous'){monthly[idx].nf+=+e.wt_nf||0;monthly[idx].rs_nf+=+e.amount||0;}
+      else {monthly[idx].ferrous+=(+e.wt_ms||0)+(+e.wt_wta||0)+(+e.wt_tb||0);monthly[idx].rs_f+=+e.amount||0;}
+      monthly[idx].misc+=+e.wt_other||0;
+    });
     sessMP.forEach(e=>{ const idx=MKEYS.indexOf(e.month); if(idx>=0){monthly[idx].mp_mt+=+e.wt||0;monthly[idx].mp_rs+=+e.amount||0;} });
     const tot=monthly.reduce((a,m)=>({ferrous:a.ferrous+m.ferrous,wta:a.wta+m.wta,nf:a.nf+m.nf,misc:a.misc+m.misc,mp_mt:a.mp_mt+m.mp_mt,rs_f:a.rs_f+m.rs_f,rs_w:a.rs_w+m.rs_w,rs_nf:a.rs_nf+m.rs_nf,rs_m:a.rs_m+m.rs_m,mp_rs:a.mp_rs+m.mp_rs}),{ferrous:0,wta:0,nf:0,misc:0,mp_mt:0,rs_f:0,rs_w:0,rs_nf:0,rs_m:0,mp_rs:0});
     const totMT=tot.ferrous+tot.wta+tot.nf+tot.misc;
@@ -1163,9 +1184,9 @@ export function BvpScrapPosition() {
               <table className="bvp-table">
                 <thead><tr><th>Sr.</th><th>Session</th><th>Coach No.</th><th>Code</th><th>Category</th><th>Age</th><th>Cond. By</th><th>RSO No.</th><th>Purchaser</th><th>Status</th><th></th></tr></thead>
                 <tbody>
-                  {filteredCoach.length > 0 ? [...filteredCoach].reverse().map(r => (
+                  {filteredCoach.length > 0 ? [...filteredCoach].reverse().map((r, idx) => (
                     <tr key={r.id}>
-                      <td>{r.sr}</td>
+                      <td>{idx + 1}</td>
                       <td><span className="bvp-badge bvp-badge-oa">{r.session}</span></td>
                       <td style={{ fontWeight: 600 }}>{r.coach_no}</td>
                       <td><span className="bvp-badge bvp-badge-auction">{r.code}</span></td>
@@ -1419,19 +1440,18 @@ export function BvpScrapPosition() {
               m.rs_f = md.rs_f[i] || 0; m.rs_w = md.rs_w[i] || 0;
               m.rs_nf = md.rs_nf[i] || 0; m.rs_m = md.rs_m[i] || 0; m.mp_rs = md.mp_rs[i] || 0;
             });
-          } else {
-            sessScrap.filter(e => !SEED_IDS_SET.has(e.id)).forEach(e => {
-              const mk = (e.date_from || '').slice(5, 7);
-              const idx = MKEYS.indexOf(mk);
-              if (idx < 0) return;
-              const t = e.type || '';
-              if (t === 'WTA') { monthly[idx].wta += +e.wt_wta || 0; }
-              else if (t === 'Non Ferrous') { monthly[idx].nf += +e.wt_nf || 0; }
-              else { monthly[idx].ferrous += (+e.wt_ms || 0) + (+e.wt_wta || 0) + (+e.wt_tb || 0); }
-              monthly[idx].misc += +e.wt_other || 0;
-              monthly[idx].rs_f += +e.amount || 0;
-            });
           }
+          // Always add user entries (non-seed)
+          sessScrap.filter(e => !SEED_IDS_SET.has(e.id)).forEach(e => {
+            const mk = (e.date_from || '').slice(5, 7);
+            const idx = MKEYS.indexOf(mk);
+            if (idx < 0) return;
+            const t = e.type || '';
+            if (t === 'WTA') { monthly[idx].wta += +e.wt_wta || 0; monthly[idx].rs_w += +e.amount || 0; }
+            else if (t === 'Non Ferrous') { monthly[idx].nf += +e.wt_nf || 0; monthly[idx].rs_nf += +e.amount || 0; }
+            else { monthly[idx].ferrous += (+e.wt_ms || 0) + (+e.wt_wta || 0) + (+e.wt_tb || 0); monthly[idx].rs_f += +e.amount || 0; }
+            monthly[idx].misc += +e.wt_other || 0;
+          });
 
           sessMP.forEach(e => {
             const idx = MKEYS.indexOf(e.month);
