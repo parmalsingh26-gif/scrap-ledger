@@ -143,7 +143,11 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="hidden sm:block">
             <GlobalSearch />
           </div>
-          <button className="text-on-surface-variant hover:text-primary transition-colors p-2 rounded-full hover:bg-white/50">
+          <button
+            className="text-on-surface-variant hover:text-primary transition-colors p-2 rounded-full hover:bg-white/50"
+            title="Notifications (coming soon)"
+            onClick={() => alert('Notifications feature coming soon!')}
+          >
             <span className="material-symbols-outlined">notifications</span>
           </button>
           <div className="h-8 w-8 rounded-full bg-primary-container text-white flex items-center justify-center font-bold text-sm shadow-sm cursor-pointer" onClick={handleAuthToggle}>

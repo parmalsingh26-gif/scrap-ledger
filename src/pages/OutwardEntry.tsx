@@ -118,12 +118,18 @@ export function OutwardEntry() {
       await db.outwardEntries.add(entryData);
 
       setStatus({ type: 'success', msg: 'Outward entry recorded successfully.' });
+      setSelectedItemId('');
       setLotNumber('');
+      setHsnCode('');
+      setHsnAutoFilled(false);
       setQuantity('');
+      setUnitId('');
       setFirmName('');
       setFirmInput('');
       setWeightPerNos('');
       setDateLotApplied('');
+      setDateSold(today);
+      setDateDelivered(today);
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
       setStatus({ type: 'error', msg: 'Failed to record entry.' });

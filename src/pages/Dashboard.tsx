@@ -69,13 +69,14 @@ export function Dashboard() {
     const inward = inwardEntries.filter(e => e.itemId === itemId).map(e => ({
       ...e,
       _type: 'INWARD' as const,
-      timestamp: new Date(e.date).getTime()
+      timestamp: new Date(e.date || '1970-01-01').getTime()
     }));
     
     const outward = outwardEntries.filter(e => e.itemId === itemId).map(e => ({
       ...e,
       _type: 'OUTWARD' as const,
-      timestamp: new Date(e.dateDelivered).getTime()
+      // dateDelivered pe fallback — invalid date se NaN avoid karo
+      timestamp: new Date(e.dateDelivered || e.dateSold || '1970-01-01').getTime()
     }));
     
     return [...inward, ...outward].sort((a, b) => b.timestamp - a.timestamp);
@@ -372,8 +373,20 @@ export function Dashboard() {
     }
   };
 
-  const totalInward = inwardEntries.reduce((acc, curr) => acc + curr.quantity, 0).toFixed(1);
-  const totalOutward = outwardEntries.reduce((acc, curr) => acc + curr.quantity, 0).toFixed(1);
+  // ── Unit-wise totals for Dashboard KPI (correct representation) ──
+  // Mixed units ko directly add karna galat hai, isliye unit-wise dikhao
+  const inwardTotalsByUnit: Record<string, number> = {};
+  const outwardTotalsByUnit: Record<string, number> = {};
+  inwardEntries.forEach(e => {
+    const u = unitMap.get(e.unitId) || 'Unknown';
+    inwardTotalsByUnit[u] = (inwardTotalsByUnit[u] || 0) + e.quantity;
+  });
+  outwardEntries.forEach(e => {
+    const u = unitMap.get(e.unitId) || 'Unknown';
+    outwardTotalsByUnit[u] = (outwardTotalsByUnit[u] || 0) + e.quantity;
+  });
+  const totalInwardStr = Object.entries(inwardTotalsByUnit).map(([u, v]) => `${v.toFixed(1)} ${u}`).join(' + ') || '0';
+  const totalOutwardStr = Object.entries(outwardTotalsByUnit).map(([u, v]) => `${v.toFixed(1)} ${u}`).join(' + ') || '0';
   const totalBalance = balances.reduce((acc, curr) => acc + curr.approxBalance, 0).toFixed(1);
 
   return (
@@ -410,7 +423,7 @@ export function Dashboard() {
           <div className="flex justify-between items-start relative z-10">
             <div>
               <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-[11px]">Total Inward</p>
-              <h3 className="font-display-lg text-display-lg text-on-surface mt-1 text-2xl">{totalInward}<span className="text-sm text-outline ml-0.5">u</span></h3>
+              <h3 className="font-display-lg text-display-lg text-on-surface mt-1 text-lg leading-tight break-all">{totalInwardStr}</h3>
             </div>
             <div className="w-8 h-8 rounded-full bg-tertiary-container/20 flex items-center justify-center text-tertiary">
               <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>arrow_downward</span>
@@ -432,7 +445,7 @@ export function Dashboard() {
           <div className="flex justify-between items-start relative z-10">
             <div>
               <p className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider text-[11px]">Total Outward</p>
-              <h3 className="font-display-lg text-display-lg text-on-surface mt-1 text-2xl">{totalOutward}<span className="text-sm text-outline ml-0.5">u</span></h3>
+              <h3 className="font-display-lg text-display-lg text-on-surface mt-1 text-lg leading-tight break-all">{totalOutwardStr}</h3>
             </div>
             <div className="w-8 h-8 rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary">
               <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>arrow_upward</span>

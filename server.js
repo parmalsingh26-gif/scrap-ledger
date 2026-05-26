@@ -185,34 +185,54 @@ async function getNextId(model) {
 function makeApi(model) {
   const router = express.Router();
   router.get('/', async (req, res) => {
-    res.json(await model.find({}, '-_id -__v').sort('id'));
+    try {
+      res.json(await model.find({}, '-_id -__v').sort('id'));
+    } catch (err) {
+      console.error('GET error:', err);
+      res.status(500).json({ error: 'Failed to fetch records' });
+    }
   });
   router.post('/', async (req, res) => {
-    const data = req.body;
-    if (model !== InventoryBalance && !data.id) {
-      data.id = await getNextId(model);
+    try {
+      const data = req.body;
+      if (model !== InventoryBalance && !data.id) {
+        data.id = await getNextId(model);
+      }
+      const doc = new model(data);
+      await doc.save();
+      
+      // remove _id and __v before returning
+      const ret = doc.toObject();
+      delete ret._id;
+      delete ret.__v;
+      
+      res.json(ret);
+    } catch (err) {
+      console.error('POST error:', err);
+      res.status(500).json({ error: 'Failed to create record' });
     }
-    const doc = new model(data);
-    await doc.save();
-    
-    // remove _id and __v before returning
-    const ret = doc.toObject();
-    delete ret._id;
-    delete ret.__v;
-    
-    res.json(ret);
   });
   router.put('/:id', async (req, res) => {
-    const id = Number(req.params.id);
-    const filter = model === InventoryBalance ? { itemId: id } : { id };
-    await model.findOneAndUpdate(filter, req.body, { upsert: true });
-    res.json({ success: true });
+    try {
+      const id = Number(req.params.id);
+      const filter = model === InventoryBalance ? { itemId: id } : { id };
+      await model.findOneAndUpdate(filter, req.body, { upsert: true });
+      res.json({ success: true });
+    } catch (err) {
+      console.error('PUT error:', err);
+      res.status(500).json({ error: 'Failed to update record' });
+    }
   });
   router.delete('/:id', async (req, res) => {
-    const id = Number(req.params.id);
-    const filter = model === InventoryBalance ? { itemId: id } : { id };
-    await model.findOneAndDelete(filter);
-    res.json({ success: true });
+    try {
+      const id = Number(req.params.id);
+      const filter = model === InventoryBalance ? { itemId: id } : { id };
+      await model.findOneAndDelete(filter);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('DELETE error:', err);
+      res.status(500).json({ error: 'Failed to delete record' });
+    }
   });
   return router;
 }
@@ -229,20 +249,35 @@ app.use('/api/inventoryBalances', makeApi(InventoryBalance));
 function makeBvpApi(model) {
   const router = express.Router();
   router.get('/', async (req, res) => {
-    res.json(await model.find({}, '-_id -__v'));
+    try {
+      res.json(await model.find({}, '-_id -__v'));
+    } catch (err) {
+      console.error('BVP GET error:', err);
+      res.status(500).json({ error: 'Failed to fetch records' });
+    }
   });
   router.post('/', async (req, res) => {
-    const data = req.body;
-    const doc = new model(data);
-    await doc.save();
-    const ret = doc.toObject();
-    delete ret._id;
-    delete ret.__v;
-    res.json(ret);
+    try {
+      const data = req.body;
+      const doc = new model(data);
+      await doc.save();
+      const ret = doc.toObject();
+      delete ret._id;
+      delete ret.__v;
+      res.json(ret);
+    } catch (err) {
+      console.error('BVP POST error:', err);
+      res.status(500).json({ error: 'Failed to create record' });
+    }
   });
   router.delete('/:id', async (req, res) => {
-    await model.findOneAndDelete({ id: req.params.id });
-    res.json({ success: true });
+    try {
+      await model.findOneAndDelete({ id: req.params.id });
+      res.json({ success: true });
+    } catch (err) {
+      console.error('BVP DELETE error:', err);
+      res.status(500).json({ error: 'Failed to delete record' });
+    }
   });
   return router;
 }
@@ -378,6 +413,7 @@ app.post('/api/init', async (req, res) => {
 });
 
 app.post('/api/backup', async (req, res) => {
+  try {
     const { categories, items, units, inwardEntries, outwardEntries, inventoryBalances } = req.body;
     await Category.deleteMany({});
     if(categories?.length) await Category.insertMany(categories);
@@ -398,6 +434,10 @@ app.post('/api/backup', async (req, res) => {
     if(inventoryBalances?.length) await InventoryBalance.insertMany(inventoryBalances);
     
     res.json({ success: true });
+  } catch (err) {
+    console.error('Backup restore error:', err);
+    res.status(500).json({ error: 'Backup restore failed', details: String(err) });
+  }
 });
 
 // Serve static files from the React app

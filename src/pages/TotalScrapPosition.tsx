@@ -20,6 +20,7 @@ function convertToMT(qty: number, unit: string): number | null {
 }
 
 function fmtNum(n: number, dec = 2): string {
+  if (Object.is(n, -0)) n = 0; // negative zero fix
   return n.toFixed(dec).replace(/\.?0+$/, '') || '0';
 }
 

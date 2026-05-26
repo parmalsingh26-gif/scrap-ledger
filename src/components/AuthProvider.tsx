@@ -61,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Admin PIN login (backward compatible)
   const login = (pin: string) => {
-    if (pin === storedPin || pin === '9999') {
+    if (pin === storedPin) {
       setIsAdmin(true);
       sessionStorage.setItem('isAdmin', 'true');
       return true;
@@ -75,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const updatePin = (oldPin: string, newPin: string) => {
-    if (oldPin === storedPin || oldPin === '9999') {
+    if (oldPin === storedPin) {
       localStorage.setItem('adminPin', newPin);
       setStoredPin(newPin);
       return true;
