@@ -11,6 +11,7 @@ function FloatingParticles({ canvasRef }: { canvasRef: React.RefObject<HTMLCanva
 
     let animationId: number;
     let W = 0, H = 0;
+    let time = 0;
 
     // Smooth mouse with lerp
     const mouse = { x: -9999, y: -9999, targetX: -9999, targetY: -9999, active: false };
@@ -25,6 +26,8 @@ function FloatingParticles({ canvasRef }: { canvasRef: React.RefObject<HTMLCanva
       size: number; baseSize: number;
       opacity: number; baseOpacity: number;
       hue: number;
+      driftPhase: number;
+      driftSpeed: number;
     }
 
     let particles: Particle[] = [];
@@ -57,11 +60,14 @@ function FloatingParticles({ canvasRef }: { canvasRef: React.RefObject<HTMLCanva
           opacity: Math.random() * 0.4 + 0.1,
           baseOpacity: Math.random() * 0.4 + 0.1,
           hue: Math.random() * 60 + 200, // blue-cyan-purple range
+          driftPhase: Math.random() * Math.PI * 2,
+          driftSpeed: Math.random() * 0.01 + 0.005,
         });
       }
     };
 
     const animate = () => {
+      time += 1;
       // Smooth mouse lerp
       mouse.x += (mouse.targetX - mouse.x) * 0.12;
       mouse.y += (mouse.targetY - mouse.y) * 0.12;
@@ -184,9 +190,13 @@ function FloatingParticles({ canvasRef }: { canvasRef: React.RefObject<HTMLCanva
           p.opacity += (p.baseOpacity - p.opacity) * 0.03;
         }
 
-        // Gentle return to origin (elastic)
-        p.vx += (p.originX - p.x) * 0.001;
-        p.vy += (p.originY - p.y) * 0.001;
+        // Smooth drifting based on sine/cosine for organic movement
+        p.vx += Math.cos(time * p.driftSpeed + p.driftPhase) * 0.02;
+        p.vy += Math.sin(time * p.driftSpeed + p.driftPhase) * 0.02;
+
+        // Gentle return to origin (elastic) - slightly weaker to allow wider wandering
+        p.vx += (p.originX - p.x) * 0.0004;
+        p.vy += (p.originY - p.y) * 0.0004;
 
         // Friction
         p.vx *= 0.96;
