@@ -104,7 +104,7 @@ export function TotalScrapPosition() {
   const inwardEntries = useLiveQuery(() => db.inwardEntries.toArray());
   const outwardEntries = useLiveQuery(() => db.outwardEntries.toArray());
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'pending' | 'converter'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'monthly' | 'pending' | 'converter'>('overview');
   const [selectedCatId, setSelectedCatId] = useState<number | 'all'>('all');
 
   const barChartRef = useRef<HTMLCanvasElement>(null);
@@ -177,6 +177,66 @@ export function TotalScrapPosition() {
       };
     });
   }, [items, categories, units, inwardEntries, outwardEntries, unitMap]);
+
+  // ── Month-wise Aggregation ───────────────────────────────────────────────
+  const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  const monthlyData = useMemo(() => {
+    if (!inwardEntries || !outwardEntries || !units) return [];
+
+    // Collect all year-month keys from both inward and outward entries
+    const monthSet = new Set<string>();
+    inwardEntries.forEach(e => {
+      if (e.date) monthSet.add(e.date.slice(0, 7)); // YYYY-MM
+    });
+    outwardEntries.forEach(e => {
+      if (e.dateSold) monthSet.add(e.dateSold.slice(0, 7));
+    });
+
+    // Sort months chronologically
+    const sortedMonths = Array.from(monthSet).sort();
+
+    return sortedMonths.map(ym => {
+      const [year, mon] = ym.split('-');
+      const label = MONTH_LABELS[parseInt(mon) - 1] + '-' + year.slice(2);
+
+      // Inward entries for this month
+      const iEntries = inwardEntries.filter(e => (e.date || '').startsWith(ym));
+      let inwardMT = 0;
+      const inwardByUnit: Record<string, number> = {};
+      iEntries.forEach(e => {
+        const uName = unitMap.get(e.unitId) || 'Unknown';
+        inwardByUnit[uName] = (inwardByUnit[uName] || 0) + e.quantity;
+        const asMT = convertToMT(e.quantity, uName);
+        if (asMT !== null) inwardMT += asMT;
+      });
+
+      // Outward entries for this month
+      const oEntries = outwardEntries.filter(e => (e.dateSold || '').startsWith(ym));
+      let outwardMT = 0;
+      const outwardByUnit: Record<string, number> = {};
+      oEntries.forEach(e => {
+        const uName = unitMap.get(e.unitId) || 'Unknown';
+        outwardByUnit[uName] = (outwardByUnit[uName] || 0) + e.quantity;
+        const asMT = convertToMT(e.quantity, uName);
+        if (asMT !== null) outwardMT += asMT;
+      });
+
+      const netMT = inwardMT - outwardMT;
+
+      return {
+        ym,
+        label,
+        inwardMT: +inwardMT.toFixed(3),
+        outwardMT: +outwardMT.toFixed(3),
+        netMT: +netMT.toFixed(3),
+        inwardCount: iEntries.length,
+        outwardCount: oEntries.length,
+        inwardByUnit,
+        outwardByUnit,
+      };
+    });
+  }, [inwardEntries, outwardEntries, units, unitMap]);
 
   // ── Pending entries audit ─────────────────────────────────────────────────
   const pendingEntries = useMemo(() => {
@@ -325,9 +385,10 @@ export function TotalScrapPosition() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 flex-wrap">
         {[
           { id: 'overview', label: 'Category Overview', icon: 'bar_chart' },
+          { id: 'monthly', label: 'Monthly Summary', icon: 'calendar_month' },
           { id: 'pending', label: `Pending (${pendingEntries.length})`, icon: 'pending_actions' },
           { id: 'converter', label: 'Unit Converter', icon: 'calculate' },
         ].map(tab => (
@@ -444,6 +505,151 @@ export function TotalScrapPosition() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── MONTHLY SUMMARY TAB ── */}
+      {activeTab === 'monthly' && (
+        <div className="space-y-4">
+          {/* Info banner */}
+          <div className="flex items-start gap-2 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-700">
+            <span className="material-symbols-outlined text-[18px] mt-0.5">info</span>
+            <span>Inward entries ki <strong>date</strong> aur Outward entries ki <strong>dateSold</strong> se automatically month-wise group hota hai. 2 April + 22 April → dono <strong>Apr</strong> mein count honge.</span>
+          </div>
+
+          {monthlyData.length === 0 ? (
+            <div className="glass-panel rounded-xl p-12 text-center">
+              <span className="material-symbols-outlined text-gray-300 text-[56px]" style={{ fontVariationSettings: "'FILL' 1" }}>calendar_month</span>
+              <p className="text-gray-500 mt-3 font-medium">Koi entries nahi hain abhi</p>
+              <p className="text-sm text-gray-400 mt-1">Scrap entries add karo — woh automatically is table mein aayengi.</p>
+            </div>
+          ) : (
+            <div className="glass-panel rounded-xl overflow-hidden shadow-sm">
+              {/* KPI summary row */}
+              <div className="grid grid-cols-3 gap-4 p-5 border-b border-outline-variant/20 bg-surface-variant/20">
+                {[
+                  {
+                    label: 'Total Inward (All Months)',
+                    value: fmtNum(monthlyData.reduce((a, m) => a + m.inwardMT, 0), 2) + ' MT',
+                    icon: 'arrow_downward', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200'
+                  },
+                  {
+                    label: 'Total Outward (All Months)',
+                    value: fmtNum(monthlyData.reduce((a, m) => a + m.outwardMT, 0), 2) + ' MT',
+                    icon: 'arrow_upward', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200'
+                  },
+                  {
+                    label: 'Net Balance (All Months)',
+                    value: (() => { const n = monthlyData.reduce((a, m) => a + m.netMT, 0); return (n >= 0 ? '+' : '') + fmtNum(n, 2) + ' MT'; })(),
+                    icon: 'scale',
+                    color: monthlyData.reduce((a, m) => a + m.netMT, 0) >= 0 ? 'text-emerald-600' : 'text-red-600',
+                    bg: monthlyData.reduce((a, m) => a + m.netMT, 0) >= 0 ? 'bg-emerald-50' : 'bg-red-50',
+                    border: monthlyData.reduce((a, m) => a + m.netMT, 0) >= 0 ? 'border-emerald-200' : 'border-red-200'
+                  },
+                ].map((k, i) => (
+                  <div key={i} className={`flex items-center gap-3 rounded-xl p-3 border ${k.border} ${k.bg}`}>
+                    <span className={`material-symbols-outlined ${k.color} text-[24px]`} style={{ fontVariationSettings: "'FILL' 1" }}>{k.icon}</span>
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium">{k.label}</p>
+                      <p className={`text-lg font-bold ${k.color}`}>{k.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Monthly Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse" style={{ minWidth: 700 }}>
+                  <thead>
+                    <tr className="border-b border-outline-variant/20 bg-surface-variant/30">
+                      <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Month</th>
+                      <th className="px-5 py-3 text-xs font-semibold text-blue-600 uppercase tracking-wide text-right">Inward (MT)</th>
+                      <th className="px-5 py-3 text-xs font-semibold text-amber-600 uppercase tracking-wide text-right">Outward (MT)</th>
+                      <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Net Balance (MT)</th>
+                      <th className="px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide text-right">Inward Entries</th>
+                      <th className="px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide text-right">Outward Entries</th>
+                      <th className="px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide text-center">Balance Bar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...monthlyData].reverse().map((m, i) => {
+                      const maxMT = Math.max(...monthlyData.map(x => x.inwardMT), 1);
+                      const inPct = Math.min(100, (m.inwardMT / maxMT) * 100);
+                      const outPct = Math.min(100, (m.outwardMT / maxMT) * 100);
+                      const isPositive = m.netMT >= 0;
+                      return (
+                        <tr key={m.ym} className={`border-b border-outline-variant/10 hover:bg-gray-50/60 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
+                          <td className="px-5 py-3">
+                            <span className="font-semibold text-sm text-gray-800">{m.label}</span>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <span className="text-sm font-semibold text-blue-700">{m.inwardMT > 0 ? fmtNum(m.inwardMT, 3) : '—'}</span>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <span className="text-sm font-semibold text-amber-700">{m.outwardMT > 0 ? fmtNum(m.outwardMT, 3) : '—'}</span>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${
+                              isPositive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {m.netMT >= 0 ? '+' : ''}{fmtNum(m.netMT, 3)} MT
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-right text-xs text-gray-500">{m.inwardCount} entries</td>
+                          <td className="px-5 py-3 text-right text-xs text-gray-500">{m.outwardCount} entries</td>
+                          <td className="px-5 py-3">
+                            <div className="flex flex-col gap-1" style={{ minWidth: 120 }}>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] text-blue-500 w-5">IN</span>
+                                <div className="flex-1 h-2 bg-blue-100 rounded-full overflow-hidden">
+                                  <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: inPct + '%' }} />
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] text-amber-500 w-5">OUT</span>
+                                <div className="flex-1 h-2 bg-amber-100 rounded-full overflow-hidden">
+                                  <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: outPct + '%' }} />
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* Total Row */}
+                    <tr className="bg-gray-100 border-t-2 border-gray-300">
+                      <td className="px-5 py-3 font-bold text-sm text-gray-800">Grand Total</td>
+                      <td className="px-5 py-3 text-right font-bold text-blue-700 text-sm">
+                        {fmtNum(monthlyData.reduce((a, m) => a + m.inwardMT, 0), 3)} MT
+                      </td>
+                      <td className="px-5 py-3 text-right font-bold text-amber-700 text-sm">
+                        {fmtNum(monthlyData.reduce((a, m) => a + m.outwardMT, 0), 3)} MT
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        {(() => {
+                          const n = monthlyData.reduce((a, m) => a + m.netMT, 0);
+                          return (
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${
+                              n >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {n >= 0 ? '+' : ''}{fmtNum(n, 3)} MT
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-5 py-3 text-right text-xs font-semibold text-gray-600">
+                        {monthlyData.reduce((a, m) => a + m.inwardCount, 0)} entries
+                      </td>
+                      <td className="px-5 py-3 text-right text-xs font-semibold text-gray-600">
+                        {monthlyData.reduce((a, m) => a + m.outwardCount, 0)} entries
+                      </td>
+                      <td className="px-5 py-3"></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
