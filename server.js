@@ -177,6 +177,23 @@ const BvpMpEntrySchema = new mongoose.Schema({
 });
 const BvpMpEntry = mongoose.model('BvpMpEntry', BvpMpEntrySchema);
 
+const BvpMonthlyManualEntrySchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  session: String,
+  month: String,
+  ferrous: Number,
+  wta: Number,
+  nf: Number,
+  misc: Number,
+  mp_mt: Number,
+  rs_f: Number,
+  rs_w: Number,
+  rs_nf: Number,
+  rs_m: Number,
+  mp_rs: Number
+}, { timestamps: true });
+const BvpMonthlyManualEntry = mongoose.model('BvpMonthlyManualEntry', BvpMonthlyManualEntrySchema);
+
 async function getNextId(model) {
   const last = await model.findOne().sort('-id');
   return last && last.id ? last.id + 1 : 1;
@@ -259,15 +276,21 @@ function makeBvpApi(model) {
   router.post('/', async (req, res) => {
     try {
       const data = req.body;
-      const doc = new model(data);
-      await doc.save();
-      const ret = doc.toObject();
+      if (!data.id) {
+        return res.status(400).json({ error: 'id is required' });
+      }
+      const record = await model.findOneAndUpdate(
+        { id: data.id },
+        data,
+        { new: true, upsert: true }
+      );
+      const ret = record.toObject();
       delete ret._id;
       delete ret.__v;
       res.json(ret);
     } catch (err) {
       console.error('BVP POST error:', err);
-      res.status(500).json({ error: 'Failed to create record' });
+      res.status(500).json({ error: 'Failed to create/update record' });
     }
   });
   router.delete('/:id', async (req, res) => {
@@ -286,6 +309,7 @@ app.use('/api/bvpScrapEntries', makeBvpApi(BvpScrapEntry));
 app.use('/api/bvpCoachEntries', makeBvpApi(BvpCoachEntry));
 app.use('/api/bvpSurveyEntries', makeBvpApi(BvpSurveyEntry));
 app.use('/api/bvpMpEntries', makeBvpApi(BvpMpEntry));
+app.use('/api/bvpMonthlyManualEntries', makeBvpApi(BvpMonthlyManualEntry));
 
 // BVP Seed Data Endpoint
 app.post('/api/bvp/init', async (req, res) => {

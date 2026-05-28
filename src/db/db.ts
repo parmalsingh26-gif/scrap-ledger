@@ -144,6 +144,22 @@ export interface BvpMpEntry {
   remarks: string;
 }
 
+export interface BvpMonthlyManualEntry {
+  id: string; // e.g. "2024-25_04" for April 2024
+  session: string;
+  month: string; // "04", "05", etc.
+  ferrous: number;
+  wta: number;
+  nf: number;
+  misc: number;
+  mp_mt: number;
+  rs_f: number;
+  rs_w: number;
+  rs_nf: number;
+  rs_m: number;
+  mp_rs: number;
+}
+
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5001/api';
 
 const listeners = new Set<() => void>();
@@ -258,6 +274,7 @@ export const db = {
   bvpScrapEntries: {
     toArray: (): Promise<BvpScrapEntry[]> => apiFetch('/bvpScrapEntries'),
     add: (data: any): Promise<BvpScrapEntry> => apiFetch('/bvpScrapEntries', { method: 'POST', body: JSON.stringify(data) }),
+    put: (data: any): Promise<BvpScrapEntry> => apiFetch('/bvpScrapEntries', { method: 'POST', body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch(`/bvpScrapEntries/${id}`, { method: 'DELETE' }),
   },
   bvpCoachEntries: {
@@ -274,6 +291,13 @@ export const db = {
     toArray: (): Promise<BvpMpEntry[]> => apiFetch('/bvpMpEntries'),
     add: (data: any): Promise<BvpMpEntry> => apiFetch('/bvpMpEntries', { method: 'POST', body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch(`/bvpMpEntries/${id}`, { method: 'DELETE' }),
+  },
+  bvpMonthlyManualEntries: {
+    toArray: (): Promise<BvpMonthlyManualEntry[]> => apiFetch('/bvpMonthlyManualEntries'),
+    add: (data: any): Promise<BvpMonthlyManualEntry> => apiFetch('/bvpMonthlyManualEntries', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: any) => apiFetch(`/bvpMonthlyManualEntries`, { method: 'POST', body: JSON.stringify(data) }),
+    put: (data: any) => apiFetch(`/bvpMonthlyManualEntries`, { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: string) => apiFetch(`/bvpMonthlyManualEntries/${id}`, { method: 'DELETE' }),
   },
   bvpInit: () => apiFetch('/bvp/init', { method: 'POST', body: JSON.stringify({}) }),
   transaction: async (mode: string, tables: any[], fn: () => Promise<void>) => {

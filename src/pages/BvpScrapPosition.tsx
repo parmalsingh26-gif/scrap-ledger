@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Chart, registerables } from 'chart.js';
 import { db } from '../db/db';
 import type { BvpScrapEntry, BvpCoachEntry, BvpSurveyEntry, BvpMpEntry } from '../db/db';
@@ -82,6 +83,48 @@ function fmt(d: string): string {
   } catch { return d; }
 }
 
+/* ===== SHARED HELPERS FOR BUG FIXES ===== */
+function extractMonthKey(dateStr: string): string {
+  if (!dateStr) return '';
+  // Convert DD-MM-YYYY or DD/MM/YYYY to YYYY-MM-DD
+  let d = dateStr;
+  if (d.includes('/')) d = d.replace(/\//g, '-');
+  const parts = d.split('-');
+  if (parts.length === 3) {
+    if (parts[2].length === 4) return parts[1]; // DD-MM-YYYY
+    if (parts[0].length === 4) return parts[1]; // YYYY-MM-DD
+  }
+  return '';
+}
+
+function getBucketedWeights(e: Partial<BvpScrapEntry>) {
+  const t = e.type || '';
+  const isWta = t === 'WTA';
+  const isNf = t === 'Non Ferrous';
+  const isMisc = ['Rubber', 'Wooden', 'PVC/Plastic', 'Battery', 'Mix/Junk', 'Other', 'Machine/Plant'].includes(t);
+  
+  let wta = +e.wt_wta! || 0;
+  let nf = +e.wt_nf! || 0;
+  let ferrous = (+e.wt_ms! || 0) + (+e.wt_tb! || 0);
+  let misc = +e.wt_other! || 0;
+  const tot = +e.wt_total! || 0;
+
+  // Fallback to wt_total if specific field is 0 but type matches
+  if (isWta && wta === 0) wta = tot;
+  else if (isNf && nf === 0) nf = tot;
+  else if (isMisc && misc === 0) misc = tot;
+  else if (!isWta && !isNf && !isMisc && ferrous === 0) ferrous = tot;
+
+  // Sometimes WTA is attached to MS Ferrous, keep it as Ferrous if type is not strictly WTA
+  if (!isWta && wta > 0) {
+    ferrous += wta;
+    wta = 0;
+  }
+
+  return { ferrous, wta, nf, misc, amt: +e.amount! || 0 };
+}
+
+
 /* ========== Toast Component ========== */
 function Toast({ message, show }: { message: string; show: boolean }) {
   return (
@@ -99,6 +142,11 @@ export function BvpScrapPosition() {
   const [coachEntries, setCoachEntries] = useState<BvpCoachEntry[]>([]);
   const [surveyEntries, setSurveyEntries] = useState<BvpSurveyEntry[]>([]);
   const [mpEntries, setMpEntries] = useState<BvpMpEntry[]>([]);
+  const [manualMonthlyEntries, setManualMonthlyEntries] = useState<BvpMonthlyManualEntry[]>([]);
+
+  // Edit states for Summary Table
+  const [editModeSummary, setEditModeSummary] = useState(false);
+  const [editingSummaryData, setEditingSummaryData] = useState<Record<string, Partial<BvpMonthlyManualEntry>>>({});
 
   const [toast, setToast] = useState({ message: '', show: false });
   const [scrapFilter, setScrapFilter] = useState('all');
@@ -109,6 +157,14 @@ export function BvpScrapPosition() {
   const [mpFilter, setMpFilter] = useState('all');
   const [summarySession, setSummarySession] = useState(currentSession);
   const [mainChartMode, setMainChartMode] = useState('total');
+
+  // Bulk Import States
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importDataPreview, setImportDataPreview] = useState<any>(null);
+  const [importLoading, setImportLoading] = useState(false);
+
+  // Diff Modal State
+  const [diffModal, setDiffModal] = useState<{ open: boolean; sess: string; rows: any[] }>({ open: false, sess: '', rows: [] });
 
   // Form states
   const [scrapForm, setScrapForm] = useState({
@@ -148,16 +204,18 @@ export function BvpScrapPosition() {
 
   const loadData = useCallback(async () => {
     try {
-      const [s, c, sv, mp] = await Promise.all([
+      const [s, c, sv, mp, man] = await Promise.all([
         db.bvpScrapEntries.toArray(),
         db.bvpCoachEntries.toArray(),
         db.bvpSurveyEntries.toArray(),
-        db.bvpMpEntries.toArray()
+        db.bvpMpEntries.toArray(),
+        db.bvpMonthlyManualEntries.toArray()
       ]);
       setScrapEntries(s);
       setCoachEntries(c);
       setSurveyEntries(sv);
       setMpEntries(mp);
+      setManualMonthlyEntries(man);
     } catch (e) { console.error('Failed to load BVP data:', e); }
   }, []);
 
@@ -212,15 +270,12 @@ export function BvpScrapPosition() {
       if (userNew.length) {
         const extra = { ferrous: 0, wta: 0, nf: 0, misc: 0, rev: 0 };
         userNew.forEach(e => {
-          if (e.type === 'WTA') {
-            extra.wta += +e.wt_wta || 0;
-          } else if (e.type === 'Non Ferrous') {
-            extra.nf += +e.wt_nf || 0;
-          } else {
-            extra.ferrous += (+e.wt_ms || 0) + (+e.wt_wta || 0) + (+e.wt_tb || 0);
-          }
-          extra.misc += +e.wt_other || 0;
-          extra.rev += +e.amount || 0;
+          const bw = getBucketedWeights(e);
+          extra.ferrous += bw.ferrous;
+          extra.wta += bw.wta;
+          extra.nf += bw.nf;
+          extra.misc += bw.misc;
+          extra.rev += bw.amt;
         });
         merged[sess] = {
           ferrous: merged[sess].ferrous + extra.ferrous,
@@ -240,15 +295,12 @@ export function BvpScrapPosition() {
         const entries = scrapEntries.filter(e => e.session === sess);
         const r = { ferrous: 0, wta: 0, nf: 0, misc: 0, rev: 0 };
         entries.forEach(e => {
-          if (e.type === 'WTA') {
-            r.wta += +e.wt_wta || 0;
-          } else if (e.type === 'Non Ferrous') {
-            r.nf += +e.wt_nf || 0;
-          } else {
-            r.ferrous += (+e.wt_ms || 0) + (+e.wt_wta || 0) + (+e.wt_tb || 0);
-          }
-          r.misc += +e.wt_other || 0;
-          r.rev += +e.amount || 0;
+          const bw = getBucketedWeights(e);
+          r.ferrous += bw.ferrous;
+          r.wta += bw.wta;
+          r.nf += bw.nf;
+          r.misc += bw.misc;
+          r.rev += bw.amt;
         });
         merged[sess as string] = { ferrous: r.ferrous, wta: r.wta, nf: r.nf, misc: r.misc, rev: r.rev / 100000, pcv: 0, ocv: 0 };
       }
@@ -261,8 +313,32 @@ export function BvpScrapPosition() {
       else merged[c.session].ocv++;
     });
 
+    // Override with manual monthly entries if they exist for a session
+    const manSessions = Array.from(new Set(manualMonthlyEntries.map(e => e.session)));
+    manSessions.forEach(sess => {
+      const entries = manualMonthlyEntries.filter(m => m.session === sess);
+      let ferrous = 0, wta = 0, nf = 0, misc = 0, rev = 0;
+      entries.forEach(e => {
+        ferrous += e.ferrous || 0;
+        wta += e.wta || 0;
+        nf += e.nf || 0;
+        misc += e.misc || 0;
+        // Include M&P revenue (mp_rs) in the total revenue calculation!
+        rev += ((e.rs_f || 0) + (e.rs_w || 0) + (e.rs_nf || 0) + (e.rs_m || 0) + (e.mp_rs || 0));
+      });
+      if (!merged[sess]) {
+        merged[sess] = { ferrous, wta, nf, misc, rev: rev / 100000, pcv: 0, ocv: 0, mp_mt: 0, mp_rs: 0 };
+      } else {
+        merged[sess].ferrous = ferrous;
+        merged[sess].wta = wta;
+        merged[sess].nf = nf;
+        merged[sess].misc = misc;
+        merged[sess].rev = rev / 100000;
+      }
+    });
+
     return merged;
-  }, [scrapEntries, coachEntries]);
+  }, [scrapEntries, coachEntries, manualMonthlyEntries]);
 
   const getSortedYears = (data: Record<string, any>) => {
     return Object.keys(data).sort((a, b) => {
@@ -336,10 +412,10 @@ export function BvpScrapPosition() {
       const prefix = yr + '-' + mk;
       const rows = sessScrap.filter(x => (x.date_from || '').startsWith(prefix) || (x.date_to || '').startsWith(prefix));
       return {
-        ferrous: rows.reduce((a, x) => a + (+x.wt_ms || 0) + (+x.wt_tb || 0) + (x.type === 'WTA' ? 0 : (+x.wt_wta || 0)), 0),
-        wta: rows.reduce((a, x) => a + (x.type === 'WTA' ? (+x.wt_wta || 0) : 0), 0),
-        nf: rows.reduce((a, x) => a + (+x.wt_nf || 0), 0),
-        misc: rows.reduce((a, x) => a + (+x.wt_other || 0), 0),
+        ferrous: rows.reduce((a, x) => a + getBucketedWeights(x).ferrous, 0),
+        wta: rows.reduce((a, x) => a + getBucketedWeights(x).wta, 0),
+        nf: rows.reduce((a, x) => a + getBucketedWeights(x).nf, 0),
+        misc: rows.reduce((a, x) => a + getBucketedWeights(x).misc, 0),
       };
     });
     mkChart(monthChartRef, 'monthChart', {
@@ -427,9 +503,9 @@ export function BvpScrapPosition() {
     if (!coachForm.code) { showToast('⚠️ Coach code/type select karo'); return; }
     if (!coachForm.age) { showToast('⚠️ Overaged/Underaged select karo'); return; }
 
-    // Calculate the next Sr number safely
+    // Calculate the next Sr number safely (cast to Number to handle string imports)
     const sessionCoaches = coachEntries.filter(x => x.session === currentSession && x.sr !== 'AGG');
-    const sr = sessionCoaches.length > 0 ? Math.max(...sessionCoaches.map(c => typeof c.sr === 'number' ? c.sr : 0)) + 1 : 1;
+    const sr = sessionCoaches.length > 0 ? Math.max(...sessionCoaches.map(c => Number(c.sr) || 0)) + 1 : 1;
     const entry: BvpCoachEntry = {
       id: 'ce_' + Date.now(),
       session: currentSession,
@@ -539,6 +615,51 @@ export function BvpScrapPosition() {
     loadData();
   };
 
+  /* ===== SUMMARY TABLE EDIT HANDLERS ===== */
+  const handleSummaryChange = (monthKey: string, field: keyof BvpMonthlyManualEntry, value: string) => {
+    setEditingSummaryData(prev => ({
+      ...prev,
+      [monthKey]: {
+        ...prev[monthKey],
+        [field]: value === '' ? 0 : parseFloat(value) || 0
+      }
+    }));
+  };
+
+  const handleSaveSummary = async (sess: string, displayMonthly: any[]) => {
+    try {
+      for (const m of displayMonthly) {
+        const edited = editingSummaryData[m.mk];
+        const id = `${sess}_${m.mk}`;
+        const entry: BvpMonthlyManualEntry = {
+          id,
+          session: sess,
+          month: m.mk,
+          ferrous: edited?.ferrous ?? m.disp_ferrous,
+          wta: edited?.wta ?? m.disp_wta,
+          nf: edited?.nf ?? m.disp_nf,
+          misc: edited?.misc ?? m.disp_misc,
+          rs_f: edited?.rs_f ?? m.disp_rs_f,
+          rs_w: edited?.rs_w ?? m.disp_rs_w,
+          rs_nf: edited?.rs_nf ?? m.disp_rs_nf,
+          rs_m: edited?.rs_m ?? m.disp_rs_m,
+          mp_mt: edited?.mp_mt ?? m.disp_mp_mt,
+          mp_rs: edited?.mp_rs ?? m.disp_mp_rs,
+          updatedAt: Date.now()
+        } as any;
+        await db.bvpMonthlyManualEntries.put(entry);
+      }
+      const fresh = await db.bvpMonthlyManualEntries.toArray();
+      setManualMonthlyEntries(fresh);
+      setEditModeSummary(false);
+      setEditingSummaryData({});
+      showToast('✓ Summary saved successfully!');
+    } catch(e) {
+      console.error('Failed to save summary', e);
+      showToast('⚠️ Failed to save summary');
+    }
+  };
+
   const exportData = () => {
     const data = { scrap: scrapEntries, coach: coachEntries, survey: surveyEntries, mp_items: mpEntries };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -547,6 +668,81 @@ export function BvpScrapPosition() {
     a.download = 'BVP_Scrap_Data_' + new Date().toISOString().slice(0, 10) + '.json';
     a.click();
     showToast('Data exported as JSON (includes M&P items)!');
+  };
+
+  /* ===== BULK IMPORT HANDLERS ===== */
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (json.lot_wise_entries || json.monthly_summary_entries) {
+          setImportDataPreview(json);
+        } else {
+          showToast('⚠️ Invalid JSON format. Expected lot_wise_entries or monthly_summary_entries.');
+        }
+      } catch (err) {
+        console.error('JSON parse error:', err);
+        showToast('⚠️ Failed to parse JSON file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // reset input
+  };
+
+  const confirmImport = async () => {
+    if (!importDataPreview) return;
+    setImportLoading(true);
+    try {
+      let lotCount = 0;
+      let monthCount = 0;
+
+      if (importDataPreview.lot_wise_entries?.length) {
+        for (const entry of importDataPreview.lot_wise_entries) {
+          // Create deterministic ID to prevent duplicates if imported multiple times
+          const safeLot = (entry.lot || 'NOLOT').replace(/[^a-zA-Z0-9]/g, '');
+          // Add wt_total to ID to ensure uniqueness even if lot is empty and dates are same
+          const safeDate = extractMonthKey(entry.date_from) ? (entry.date_from || 'NODATE').replace(/[^a-zA-Z0-9]/g, '') : 'NODATE';
+          const safeType = (entry.type || 'NOTYPE').replace(/[^a-zA-Z0-9]/g, '');
+          const safeWt = String(entry.wt_total || '0').replace('.', '_');
+          const id = `BVP_L_${entry.session}_${safeDate}_${safeLot}_${safeType}_${safeWt}`;
+          
+          const newEntry: BvpScrapEntry = {
+            ...entry,
+            id,
+            updatedAt: Date.now()
+          };
+          await db.bvpScrapEntries.put(newEntry);
+          lotCount++;
+        }
+      }
+
+      if (importDataPreview.monthly_summary_entries?.length) {
+        for (const entry of importDataPreview.monthly_summary_entries) {
+          const id = `${entry.session}_${entry.month}`;
+          const newEntry: BvpMonthlyManualEntry = {
+            ...entry,
+            id,
+            updatedAt: Date.now()
+          };
+          await db.bvpMonthlyManualEntries.put(newEntry);
+          monthCount++;
+        }
+      }
+
+      showToast(`✓ Import successful! Added ${lotCount} lot entries and ${monthCount} monthly summaries.`);
+      setImportModalOpen(false);
+      setImportDataPreview(null);
+      await loadData();
+    } catch (err) {
+      console.error('Import error:', err);
+      showToast('⚠️ Import failed. Check console for details.');
+    } finally {
+      setImportLoading(false);
+    }
   };
 
   /* ===== COMPUTE SUMMARY DATA FOR EXPORT ===== */
@@ -564,13 +760,14 @@ export function BvpScrapPosition() {
     }
     // Always add user entries (non-seed)
     sessScrap.filter(e=>!SEED_IDS_SET_EXP.has(e.id)).forEach(e=>{
-      const idx=MKEYS.indexOf((e.date_from||'').slice(5,7));
+      const mk = extractMonthKey(e.date_to || e.date_from || '');
+      const idx=MKEYS.indexOf(mk);
       if(idx<0)return;
-      const t = e.type || '';
-      if(t==='WTA'){monthly[idx].wta+=+e.wt_wta||0;monthly[idx].rs_w+=+e.amount||0;}
-      else if(t==='Non Ferrous'){monthly[idx].nf+=+e.wt_nf||0;monthly[idx].rs_nf+=+e.amount||0;}
-      else {monthly[idx].ferrous+=(+e.wt_ms||0)+(+e.wt_wta||0)+(+e.wt_tb||0);monthly[idx].rs_f+=+e.amount||0;}
-      monthly[idx].misc+=+e.wt_other||0;
+      const bw = getBucketedWeights(e);
+      monthly[idx].wta += bw.wta; monthly[idx].rs_w += bw.wta > 0 ? bw.amt : 0;
+      monthly[idx].nf += bw.nf; monthly[idx].rs_nf += bw.nf > 0 ? bw.amt : 0;
+      monthly[idx].ferrous += bw.ferrous; monthly[idx].rs_f += bw.ferrous > 0 ? bw.amt : 0;
+      monthly[idx].misc += bw.misc;
     });
     sessMP.forEach(e=>{ const idx=MKEYS.indexOf(e.month); if(idx>=0){monthly[idx].mp_mt+=+e.wt||0;monthly[idx].mp_rs+=+e.amount||0;} });
     const tot=monthly.reduce((a,m)=>({ferrous:a.ferrous+m.ferrous,wta:a.wta+m.wta,nf:a.nf+m.nf,misc:a.misc+m.misc,mp_mt:a.mp_mt+m.mp_mt,rs_f:a.rs_f+m.rs_f,rs_w:a.rs_w+m.rs_w,rs_nf:a.rs_nf+m.rs_nf,rs_m:a.rs_m+m.rs_m,mp_rs:a.mp_rs+m.mp_rs}),{ferrous:0,wta:0,nf:0,misc:0,mp_mt:0,rs_f:0,rs_w:0,rs_nf:0,rs_m:0,mp_rs:0});
@@ -742,16 +939,108 @@ export function BvpScrapPosition() {
           {!canExport && (
             <button className="bvp-btn bvp-btn-ghost" onClick={exportData} style={{ fontSize:'12px' }}>⬇ Export JSON</button>
           )}
+
+          {/* Import Button */}
+          <button className="bvp-btn bvp-btn-outline" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => setImportModalOpen(true)}>
+            📥 Import JSON
+          </button>
         </div>
       </div>
       {/* Close export menu on outside click */}
       {exportMenuOpen && <div style={{ position:'fixed',inset:0,zIndex:199 }} onClick={() => setExportMenuOpen(false)} />}
+      
+      {/* Import Modal — rendered via Portal to fix position:fixed in transformed parents */}
+      {importModalOpen && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}>
+          {/* Outer shell: fixed height, NO overflow — scroll only inside */}
+          <div style={{ background: 'var(--bvp-surface)', width: '90%', maxWidth: 700, borderRadius: 12, boxShadow: '0 20px 40px rgba(0,0,0,0.2)', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+            {/* ── STICKY TOP: Title + File picker ── */}
+            <div style={{ padding: '20px 24px 14px', borderBottom: '1px solid var(--bvp-border)', flexShrink: 0 }}>
+              <h3 style={{ marginTop: 0, marginBottom: 6, fontSize: 18 }}>📥 Bulk Import via JSON</h3>
+              <p style={{ fontSize: 12, color: 'var(--bvp-text2)', margin: '0 0 12px' }}>JSON file select karo jisme <code>lot_wise_entries</code> aur/ya <code>monthly_summary_entries</code> arrays hain.</p>
+              <input type="file" accept=".json" onChange={handleFileUpload} style={{ width: '100%', cursor: 'pointer' }} />
+            </div>
+
+            {/* ── SCROLLABLE MIDDLE: Preview tables ── */}
+            <div style={{ overflowY: 'auto', padding: '16px 24px', flex: 1 }}>
+              {importDataPreview ? (
+                <div style={{ background: 'var(--bvp-surface2)', borderRadius: 8, padding: 16, fontSize: 13 }}>
+                  <strong>Data Summary:</strong>
+                  <ul style={{ margin: '8px 0 16px', paddingLeft: 20 }}>
+                    <li>{importDataPreview.lot_wise_entries?.length || 0} Lot-wise Entries found</li>
+                    <li>{importDataPreview.monthly_summary_entries?.length || 0} Monthly Summary Entries found</li>
+                  </ul>
+
+                  {importDataPreview.lot_wise_entries?.length > 0 && (
+                    <>
+                      <strong>Lot-wise Entries Preview:</strong>
+                      <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 8, border: '1px solid var(--bvp-border)', borderRadius: 4 }}>
+                        <table className="bvp-table" style={{ fontSize: 10, width: '100%' }}>
+                          <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}><tr><th>Session</th><th>Date</th><th>Lot</th><th>Type</th><th>Total Wt</th></tr></thead>
+                          <tbody>
+                            {importDataPreview.lot_wise_entries.map((e: any, i: number) => (
+                              <tr key={i}>
+                                <td>{e.session}</td>
+                                <td>{e.date_from}</td>
+                                <td>{e.lot}</td>
+                                <td>{e.type}</td>
+                                <td>{e.wt_total} MT</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                  
+                  {importDataPreview.monthly_summary_entries?.length > 0 && (
+                    <>
+                      <strong style={{ display: 'block', marginTop: 16 }}>Monthly Summary Preview:</strong>
+                      <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 8, border: '1px solid var(--bvp-border)', borderRadius: 4 }}>
+                        <table className="bvp-table" style={{ fontSize: 10, width: '100%' }}>
+                          <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}><tr><th>Session</th><th>Month</th><th>Ferrous</th><th>WTA</th><th>NF</th></tr></thead>
+                          <tbody>
+                            {importDataPreview.monthly_summary_entries.map((e: any, i: number) => (
+                              <tr key={i}>
+                                <td>{e.session}</td>
+                                <td>{e.month}</td>
+                                <td>{e.ferrous}</td>
+                                <td>{e.wta}</td>
+                                <td>{e.nf}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', color: 'var(--bvp-text3)', padding: '30px 0', fontSize: 13 }}>
+                  Upar se JSON file select karo — Preview yahan dikhega
+                </div>
+              )}
+            </div>
+
+            {/* ── STICKY BOTTOM: Action buttons ── */}
+            <div style={{ padding: '14px 24px', borderTop: '1px solid var(--bvp-border)', display: 'flex', justifyContent: 'flex-end', gap: 10, flexShrink: 0, background: 'var(--bvp-surface)' }}>
+              <button className="bvp-btn bvp-btn-ghost" onClick={() => { setImportModalOpen(false); setImportDataPreview(null); }}>❌ Cancel</button>
+              <button className="bvp-btn bvp-btn-primary" onClick={confirmImport} disabled={!importDataPreview || importLoading} style={{ background: '#1D9E75' }}>
+                {importLoading ? 'Saving...' : '✓ Verify & Save'}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      , document.body)}
 
       {/* Top Nav Tabs */}
       <div className="bvp-top-nav">
         {[
           { id: 'dashboard', label: '📊 Dashboard' },
-          { id: 'scrap-entry', label: '➕ Scrap Entry' },
+          { id: 'scrap-entry', label: '➕ Lot-wise Entry' },
+          { id: 'lot-wise-summary', label: '📋 Lot-wise Summary' },
           { id: 'coach-entry', label: '🚃 Coach Entry' },
           { id: 'survey-entry', label: '📋 Survey / Auction' },
           { id: 'all-records', label: '📁 All Records' },
@@ -761,6 +1050,14 @@ export function BvpScrapPosition() {
           <button key={tab.id} className={`bvp-nav-btn ${activeView === tab.id ? 'active' : ''}`}
             onClick={() => setActiveView(tab.id)}>{tab.label}</button>
         ))}
+        {/* Import JSON always visible in sticky bar */}
+        <button
+          className="bvp-btn bvp-btn-outline"
+          style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5, marginLeft: 'auto', padding: '6px 14px', flexShrink: 0 }}
+          onClick={() => setImportModalOpen(true)}
+        >
+          📥 Import JSON
+        </button>
       </div>
 
       {/* Session Bar */}
@@ -1011,7 +1308,7 @@ export function BvpScrapPosition() {
           {/* Scrap entries table */}
           <div className="bvp-entries-wrap">
             <div className="bvp-entries-header">
-              <h3>Scrap Entries — {currentSession}</h3>
+              <h3>Lot-wise Entries — {currentSession}</h3>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <select className="bvp-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={scrapFilter} onChange={e => setScrapFilter(e.target.value)}>
                   <option value="all">All Sessions</option>
@@ -1038,6 +1335,104 @@ export function BvpScrapPosition() {
                       <td><button className="bvp-del-btn" onClick={() => deleteEntry('scrap', r.id)}>×</button></td>
                     </tr>
                   )) : <tr><td colSpan={11} className="bvp-empty-state">No entries yet. Upar form se add karo.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== LOT-WISE SUMMARY VIEW ==================== */}
+      {activeView === 'lot-wise-summary' && (
+        <div className="bvp-view">
+          <div className="bvp-info-banner">ℹ️ Lot-wise Summary. Yeh aapke Lot-wise Entry data ka summary list hai. Dashboard data Monthly Summary (editable) se aayega.</div>
+          
+          <div className="bvp-entries-wrap">
+            <div className="bvp-entries-header">
+              <h3>Lot-wise Summary — {currentSession}</h3>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select className="bvp-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={scrapFilter} onChange={e => setScrapFilter(e.target.value)}>
+                  <option value="all">All Sessions</option>
+                  {allSessions.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <span style={{ fontSize: 12, color: 'var(--bvp-text3)' }}>{filteredScrap.length} entries</span>
+              </div>
+            </div>
+            
+            <div className="bvp-tbl-wrap" style={{ overflowX: 'auto' }}>
+              <table className="bvp-table bvp-excel-table" style={{ minWidth: 1400, fontSize: 10, borderCollapse: 'collapse', textAlign: 'center' }}>
+                <thead>
+                  <tr>
+                    <th rowSpan={3} colSpan={2} style={{ border: '1px solid #ddd', padding: '6px' }}>DATE</th>
+                    <th rowSpan={3} style={{ border: '1px solid #ddd', padding: '6px' }}>DESCRIPTION OF COND. SCRAP</th>
+                    <th colSpan={2} style={{ border: '1px solid #ddd', padding: '6px' }}>QTY</th>
+                    <th colSpan={6} style={{ border: '1px solid #ddd', padding: '6px' }}>WEIGHT IN MTs</th>
+                    <th rowSpan={3} style={{ border: '1px solid #ddd', padding: '6px' }}>LOT NO./ADVICE NOTE NO.</th>
+                    <th rowSpan={3} style={{ border: '1px solid #ddd', padding: '6px' }}>HANDED OVER TO</th>
+                    <th rowSpan={3} style={{ border: '1px solid #ddd', padding: '6px' }}>Rate Rs.</th>
+                    <th rowSpan={3} style={{ border: '1px solid #ddd', padding: '6px' }}>Total Rs.</th>
+                  </tr>
+                  <tr>
+                    <th rowSpan={2} style={{ border: '1px solid #ddd', padding: '4px' }}>IN Nos.</th>
+                    <th rowSpan={2} style={{ border: '1px solid #ddd', padding: '4px' }}>IN SETs</th>
+                    <th colSpan={3} style={{ border: '1px solid #ddd', padding: '4px' }}>M.S. SCRAP</th>
+                    <th rowSpan={2} style={{ border: '1px solid #ddd', padding: '4px' }}>NON FERROUS</th>
+                    <th rowSpan={2} style={{ border: '1px solid #ddd', padding: '4px', maxWidth: 80, whiteSpace: 'normal' }}>OTHER SCRAP i.e. GREASE/ OIL / PLASTICS /</th>
+                    <th rowSpan={2} style={{ border: '1px solid #ddd', padding: '4px' }}>TOTAL WEIGHT</th>
+                  </tr>
+                  <tr>
+                    <th style={{ border: '1px solid #ddd', padding: '4px' }}>W.T.A. SCRAP</th>
+                    <th style={{ border: '1px solid #ddd', padding: '4px' }}>TURNING BORING</th>
+                    <th style={{ border: '1px solid #ddd', padding: '4px' }}>M.S. SCRAP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredScrap.length > 0 ? [...filteredScrap].reverse().map(r => (
+                    <tr key={r.id}>
+                      <td style={{ border: '1px solid #ddd', padding: '4px' }}>{fmt(r.date_from)}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px' }}>{fmt(r.date_to) === fmt(r.date_from) ? '' : fmt(r.date_to)}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px', textAlign: 'left', maxWidth: 200, whiteSpace: 'normal' }}>{r.desc}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px' }}>{r.qty_nos || ''}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px' }}>{r.qty_sets || ''}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px', background: r.wt_wta ? '#f0f4fb' : '' }}>{r.wt_wta ? Number(r.wt_wta).toFixed(3) : ''}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px', background: r.wt_tb ? '#f0f4fb' : '' }}>{r.wt_tb ? Number(r.wt_tb).toFixed(3) : ''}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px', background: r.wt_ms ? '#f0f4fb' : '' }}>{r.wt_ms ? Number(r.wt_ms).toFixed(3) : ''}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px', background: r.wt_nf ? '#f4fbf0' : '' }}>{r.wt_nf ? Number(r.wt_nf).toFixed(3) : ''}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px', background: r.wt_other ? '#fbf0f0' : '' }}>{r.wt_other ? Number(r.wt_other).toFixed(3) : ''}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px', fontWeight: 600 }}>{r.wt_total ? Number(r.wt_total).toFixed(3) : ''}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px', color: 'var(--bvp-accent)' }}>{r.lot}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px', textAlign: 'left' }}>{r.party}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px', textAlign: 'right' }}>{r.rate ? Number(r.rate).toFixed(2) : ''}</td>
+                      <td style={{ border: '1px solid #ddd', padding: '4px', textAlign: 'right', fontWeight: 600 }}>{r.amount ? Number(r.amount).toFixed(2) : ''}</td>
+                    </tr>
+                  )) : <tr><td colSpan={15} style={{ border: '1px solid #ddd', padding: '10px' }} className="bvp-empty-state">No entries yet. Lot-wise Entry mein add karein.</td></tr>}
+                  
+                  {/* Grand Total Row */}
+                  {filteredScrap.length > 0 && (() => {
+                    let tWTA=0, tTB=0, tMS=0, tNF=0, tOther=0, tTotal=0, tAmt=0;
+                    filteredScrap.forEach(r => {
+                      tWTA += Number(r.wt_wta || 0);
+                      tTB += Number(r.wt_tb || 0);
+                      tMS += Number(r.wt_ms || 0);
+                      tNF += Number(r.wt_nf || 0);
+                      tOther += Number(r.wt_other || 0);
+                      tTotal += Number(r.wt_total || 0);
+                      tAmt += Number(r.amount || 0);
+                    });
+                    return (
+                      <tr style={{ background: '#eef2f6' }}>
+                        <td colSpan={5} style={{ border: '1px solid #ddd', padding: '6px', textAlign: 'right', fontWeight: 700 }}>Grand Total</td>
+                        <td style={{ border: '1px solid #ddd', padding: '6px', fontWeight: 600 }}>{tWTA.toFixed(3)}</td>
+                        <td style={{ border: '1px solid #ddd', padding: '6px', fontWeight: 600 }}>{tTB.toFixed(3)}</td>
+                        <td style={{ border: '1px solid #ddd', padding: '6px', fontWeight: 600 }}>{tMS.toFixed(3)}</td>
+                        <td style={{ border: '1px solid #ddd', padding: '6px', fontWeight: 600 }}>{tNF.toFixed(3)}</td>
+                        <td style={{ border: '1px solid #ddd', padding: '6px', fontWeight: 600 }}>{tOther.toFixed(3)}</td>
+                        <td style={{ border: '1px solid #ddd', padding: '6px', fontWeight: 700, color: 'var(--bvp-text)' }}>{tTotal.toFixed(3)}</td>
+                        <td colSpan={3} style={{ border: '1px solid #ddd' }}></td>
+                        <td style={{ border: '1px solid #ddd', padding: '6px', fontWeight: 700, color: 'var(--bvp-accent)', textAlign: 'right' }}>{tAmt.toFixed(2)}</td>
+                      </tr>
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1168,6 +1563,12 @@ export function BvpScrapPosition() {
             <div className="bvp-btn-row">
               <button className="bvp-btn bvp-btn-primary" onClick={saveCoachEntry}>✓ Save Coach Entry</button>
               <button className="bvp-btn bvp-btn-ghost" onClick={() => setCoachForm({ coach_no: '', code: '', tare: '', seats: '', berths: '', cost: '', age: '', cond_by: '', cat: 'PCV', rso: '', rso_date: '', offer_date: '', auc1: '', auc2: '', sale_order: '', sale_date: '', purchaser: '', del_from: '', del_to: '', sale_amt: '', status: 'SOLD', remarks: '' })}>✕ Clear</button>
+              <button className={`bvp-tab ${activeView === 'scrap-entry' ? 'active' : ''}`} onClick={() => setActiveView('scrap-entry')}>Lot-wise Entry</button>
+              <button className={`bvp-tab ${activeView === 'lot-wise-summary' ? 'active' : ''}`} onClick={() => setActiveView('lot-wise-summary')}>Lot-wise Summary</button>
+              <button className={`bvp-tab ${activeView === 'coach-entry' ? 'active' : ''}`} onClick={() => setActiveView('coach-entry')}>Coach Entry</button>
+              <button className={`bvp-tab ${activeView === 'mp-entry' ? 'active' : ''}`} onClick={() => setActiveView('mp-entry')}>M&P Entry</button>
+              <button className={`bvp-tab ${activeView === 'survey' ? 'active' : ''}`} onClick={() => setActiveView('survey')}>Survey Lot Tracker</button>
+              <button className={`bvp-tab ${activeView === 'summary-table' ? 'active' : ''}`} onClick={() => setActiveView('summary-table')}>Summary Table</button>
             </div>
           </div>
 
@@ -1426,58 +1827,169 @@ export function BvpScrapPosition() {
           const hasMD = !!MONTHLY_DATA[sess];
           const sessMP = mpEntries.filter(x => x.session === sess);
           const sessScrap = scrapEntries.filter(x => x.session === sess);
+          const sessManual = manualMonthlyEntries.filter(m => m.session === sess);
 
-          const monthly = MLAB.map((mo, i) => ({
-            mo, ferrous: 0, wta: 0, nf: 0, misc: 0, mp_mt: 0,
+          const autoMonthly = MLAB.map((mo, i) => ({
+            mo, mk: MKEYS[i], ferrous: 0, wta: 0, nf: 0, misc: 0, mp_mt: 0,
             rs_f: 0, rs_w: 0, rs_nf: 0, rs_m: 0, mp_rs: 0
           }));
 
           if (hasMD) {
             const md = MONTHLY_DATA[sess];
-            monthly.forEach((m, i) => {
+            autoMonthly.forEach((m, i) => {
               m.ferrous = md.ferrous[i] || 0; m.wta = md.wta[i] || 0;
               m.nf = md.nf[i] || 0; m.misc = md.misc[i] || 0; m.mp_mt = md.mp_mt[i] || 0;
               m.rs_f = md.rs_f[i] || 0; m.rs_w = md.rs_w[i] || 0;
               m.rs_nf = md.rs_nf[i] || 0; m.rs_m = md.rs_m[i] || 0; m.mp_rs = md.mp_rs[i] || 0;
             });
           }
-          // Always add user entries (non-seed)
+          
+          // Always calculate lot-wise totals for comparison
           sessScrap.filter(e => !SEED_IDS_SET.has(e.id)).forEach(e => {
-            const mk = (e.date_from || '').slice(5, 7);
+            const mk = extractMonthKey(e.date_to || e.date_from || '');  // Robust month extraction
             const idx = MKEYS.indexOf(mk);
             if (idx < 0) return;
-            const t = e.type || '';
-            if (t === 'WTA') { monthly[idx].wta += +e.wt_wta || 0; monthly[idx].rs_w += +e.amount || 0; }
-            else if (t === 'Non Ferrous') { monthly[idx].nf += +e.wt_nf || 0; monthly[idx].rs_nf += +e.amount || 0; }
-            else { monthly[idx].ferrous += (+e.wt_ms || 0) + (+e.wt_wta || 0) + (+e.wt_tb || 0); monthly[idx].rs_f += +e.amount || 0; }
-            monthly[idx].misc += +e.wt_other || 0;
+            const bw = getBucketedWeights(e);
+            
+            autoMonthly[idx].wta += bw.wta;
+            if (bw.wta > 0) autoMonthly[idx].rs_w += bw.amt;
+
+            autoMonthly[idx].nf += bw.nf;
+            if (bw.nf > 0) autoMonthly[idx].rs_nf += bw.amt;
+
+            autoMonthly[idx].ferrous += bw.ferrous;
+            if (bw.ferrous > 0) autoMonthly[idx].rs_f += bw.amt;
+
+            autoMonthly[idx].misc += bw.misc;
           });
 
           sessMP.forEach(e => {
             const idx = MKEYS.indexOf(e.month);
-            if (idx >= 0) { monthly[idx].mp_mt += +e.wt || 0; monthly[idx].mp_rs += +e.amount || 0; }
+            if (idx >= 0) { autoMonthly[idx].mp_mt += +e.wt || 0; autoMonthly[idx].mp_rs += +e.amount || 0; }
           });
 
-          const tot = monthly.reduce((a, m) => ({
-            ferrous: a.ferrous + m.ferrous, wta: a.wta + m.wta, nf: a.nf + m.nf, misc: a.misc + m.misc, mp_mt: a.mp_mt + m.mp_mt,
-            rs_f: a.rs_f + m.rs_f, rs_w: a.rs_w + m.rs_w, rs_nf: a.rs_nf + m.rs_nf, rs_m: a.rs_m + m.rs_m, mp_rs: a.mp_rs + m.mp_rs
+          // Build displayMonthly, incorporating manual entries
+          const displayMonthly = autoMonthly.map(auto => {
+            const man = sessManual.find(m => m.month === auto.mk);
+            const edited = editingSummaryData[auto.mk] || {};
+            
+            // For editing, use edited value if present, else manual value, else auto value
+            return {
+              ...auto,
+              man,
+              disp_ferrous: man ? man.ferrous : auto.ferrous,
+              disp_wta: man ? man.wta : auto.wta,
+              disp_nf: man ? man.nf : auto.nf,
+              disp_misc: man ? man.misc : auto.misc,
+              disp_mp_mt: man ? man.mp_mt : auto.mp_mt,
+              disp_rs_f: man ? man.rs_f : auto.rs_f,
+              disp_rs_w: man ? man.rs_w : auto.rs_w,
+              disp_rs_nf: man ? man.rs_nf : auto.rs_nf,
+              disp_rs_m: man ? man.rs_m : auto.rs_m,
+              disp_mp_rs: man ? man.mp_rs : auto.mp_rs,
+              edit_ferrous: edited.ferrous ?? (man ? man.ferrous : auto.ferrous),
+              edit_wta: edited.wta ?? (man ? man.wta : auto.wta),
+              edit_nf: edited.nf ?? (man ? man.nf : auto.nf),
+              edit_misc: edited.misc ?? (man ? man.misc : auto.misc),
+              edit_mp_mt: edited.mp_mt ?? (man ? man.mp_mt : auto.mp_mt),
+              edit_rs_f: edited.rs_f ?? (man ? man.rs_f : auto.rs_f),
+              edit_rs_w: edited.rs_w ?? (man ? man.rs_w : auto.rs_w),
+              edit_rs_nf: edited.rs_nf ?? (man ? man.rs_nf : auto.rs_nf),
+              edit_rs_m: edited.rs_m ?? (man ? man.rs_m : auto.rs_m),
+              edit_mp_rs: edited.mp_rs ?? (man ? man.mp_rs : auto.mp_rs),
+            };
+          });
+
+          const tot = displayMonthly.reduce((a, m) => ({
+            ferrous: a.ferrous + m.disp_ferrous, wta: a.wta + m.disp_wta, nf: a.nf + m.disp_nf, misc: a.misc + m.disp_misc, mp_mt: a.mp_mt + m.disp_mp_mt,
+            rs_f: a.rs_f + m.disp_rs_f, rs_w: a.rs_w + m.disp_rs_w, rs_nf: a.rs_nf + m.disp_rs_nf, rs_m: a.rs_m + m.disp_rs_m, mp_rs: a.mp_rs + m.disp_mp_rs
           }), { ferrous: 0, wta: 0, nf: 0, misc: 0, mp_mt: 0, rs_f: 0, rs_w: 0, rs_nf: 0, rs_m: 0, mp_rs: 0 });
+          
           const totMT = tot.ferrous + tot.wta + tot.nf + tot.misc;
           const totRS = tot.rs_f + tot.rs_w + tot.rs_nf + tot.rs_m;
           const cr = (v: number) => '₹' + (v / 10000000).toFixed(2) + ' Cr';
-          const fMT = (v: number) => v ? +(+v).toFixed(3) + '' : '—';
-          const fRS = (v: number) => v ? Math.round(v).toLocaleString('en-IN') : '—';
+          const fMT = (v: number) => v ? +(+v).toFixed(3) + '' : (editModeSummary ? '0' : '—');
+          const fRS = (v: number) => v ? Math.round(v).toLocaleString('en-IN') : (editModeSummary ? '0' : '—');
 
           const tgt = TARGETS[sess];
           const pct = (a: number, t: number) => ((a / t) * 100).toFixed(1);
           const cls = (p: string) => +p >= 200 ? 'tgt-good' : +p >= 100 ? 'tgt-ok' : 'tgt-bad';
 
+          // --- Compute lot-wise monthly totals for diff badge ---
+          const lotMonthly = MLAB.map((mo, i) => ({ mo, mk: MKEYS[i], ferrous: 0, wta: 0, nf: 0, misc: 0 }));
+          sessScrap.filter(e => !SEED_IDS_SET.has(e.id)).forEach(e => {
+            const mk = extractMonthKey(e.date_to || e.date_from || '');
+            const idx = MKEYS.indexOf(mk);
+            if (idx < 0) return;
+            const bw = getBucketedWeights(e);
+            lotMonthly[idx].wta += bw.wta;
+            lotMonthly[idx].nf += bw.nf;
+            lotMonthly[idx].ferrous += bw.ferrous;
+            lotMonthly[idx].misc += bw.misc;
+          });
+
+          const diffRows = displayMonthly.map((m, i) => {
+            const lot = lotMonthly[i];
+            const diffF = m.disp_ferrous - lot.ferrous;
+            const diffW = m.disp_wta - lot.wta;
+            const diffN = m.disp_nf - lot.nf;
+            const diffM = m.disp_misc - lot.misc;
+            const hasDiff = Math.abs(diffF) > 0.001 || Math.abs(diffW) > 0.001 || Math.abs(diffN) > 0.001 || Math.abs(diffM) > 0.001;
+            return { mo: m.mo, mk: m.mk, hasDiff, diffF, diffW, diffN, diffM, summF: m.disp_ferrous, summW: m.disp_wta, summN: m.disp_nf, summM: m.disp_misc, lotF: lot.ferrous, lotW: lot.wta, lotN: lot.nf, lotM: lot.misc };
+          });
+          const mismatchCount = diffRows.filter(r => r.hasDiff).length;
+
+          const renderCell = (monthObj: any, field: string, autoField: string, isMoney: boolean = false) => {
+            if (editModeSummary) {
+              return (
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="number"
+                    style={{ width: '100%', padding: '4px', textAlign: 'right', fontSize: 12, border: '1px solid var(--bvp-border)', borderRadius: 4, background: '#fff' }}
+                    value={monthObj['edit_' + autoField] === 0 ? '' : monthObj['edit_' + autoField]}
+                    onChange={(e) => handleSummaryChange(monthObj.mk, autoField as keyof BvpMonthlyManualEntry, e.target.value)}
+                  />
+                </div>
+              );
+            }
+            return (
+              <span>{isMoney ? fRS(monthObj[field]) : fMT(monthObj[field])}</span>
+            );
+          };
+
           return (
             <div className="bvp-entries-wrap" id="bvp-summary-content" key={sess}>
-              <div className="bvp-entries-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
-                <h3>Mechanical &amp; Electrical Scrap Handed Over / Delivered — {sess}</h3>
-                <p style={{ fontSize: 11, color: 'var(--bvp-text3)' }}>In Metric Ton &amp; In Rs. | M&amp;P items highlighted in amber column</p>
+              <div className="bvp-entries-header" style={{ alignItems: 'flex-start' }}>
+                <div>
+                  <h3 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    Mechanical &amp; Electrical Scrap Handed Over / Delivered — {sess}
+                    {mismatchCount > 0 && (
+                      <button
+                        onClick={() => setDiffModal({ open: true, sess, rows: diffRows })}
+                        title="Lot-wise vs Summary mismatch details"
+                        style={{ background: '#FFF3CD', border: '1px solid #BA7517', borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700, color: '#7A4F00', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      >
+                        ⚠️ {mismatchCount} month{mismatchCount > 1 ? 's' : ''} mismatch — details dekho
+                      </button>
+                    )}
+                    {mismatchCount === 0 && sessScrap.filter(e => !SEED_IDS_SET.has(e.id)).length > 0 && (
+                      <span style={{ background: '#E6F5EE', border: '1px solid #1D9E75', borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600, color: '#0D6E4F' }}>✅ Lot-wise & Summary match</span>
+                    )}
+                  </h3>
+                  <p style={{ fontSize: 11, color: 'var(--bvp-text3)' }}>In Metric Ton &amp; In Rs. | M&amp;P items highlighted in amber column</p>
+                </div>
+                <div>
+                  {editModeSummary ? (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="bvp-btn bvp-btn-ghost" onClick={() => { setEditModeSummary(false); setEditingSummaryData({}); }}>Cancel</button>
+                      <button className="bvp-btn bvp-btn-primary" onClick={() => handleSaveSummary(sess, displayMonthly)}>Save Data</button>
+                    </div>
+                  ) : (
+                    <button className="bvp-btn bvp-btn-outline" onClick={() => setEditModeSummary(true)}>✏️ Edit Data</button>
+                  )}
+                </div>
               </div>
+              
               {/* KPI row */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(110px,1fr))', gap: 10, padding: '14px 18px', borderBottom: '0.5px solid var(--bvp-border)' }}>
                 {[
@@ -1524,25 +2036,30 @@ export function BvpScrapPosition() {
                     </tr>
                   </thead>
                   <tbody>
-                    {monthly.map((m, i) => {
-                      const tt = m.ferrous + m.wta + m.nf + m.misc;
-                      const tr2 = m.rs_f + m.rs_w + m.rs_nf + m.rs_m;
+                    {displayMonthly.map((m, i) => {
+                      // Total calculation handles editing state or display state
+                      const edit_tt = (m.edit_ferrous + m.edit_wta + m.edit_nf + m.edit_misc) || 0;
+                      const disp_tt = (m.disp_ferrous + m.disp_wta + m.disp_nf + m.disp_misc) || 0;
+                      
+                      const edit_tr2 = (m.edit_rs_f + m.edit_rs_w + m.edit_rs_nf + m.edit_rs_m) || 0;
+                      const disp_tr2 = (m.disp_rs_f + m.disp_rs_w + m.disp_rs_nf + m.disp_rs_m) || 0;
+
                       const td: React.CSSProperties = { padding: '7px 8px', textAlign: 'right', borderBottom: '0.5px solid var(--bvp-border)', color: 'var(--bvp-text)', whiteSpace: 'nowrap', fontSize: 12 };
                       return (
                         <tr key={i} style={{ cursor: 'default' }}>
                           <td style={{ ...td, textAlign: 'left', fontWeight: 500, color: 'var(--bvp-text2)' }}>{m.mo}</td>
-                          <td style={td}>{fMT(m.ferrous)}</td>
-                          <td style={td}>{fMT(m.wta)}</td>
-                          <td style={td}>{fMT(m.nf)}</td>
-                          <td style={td}>{fMT(m.misc)}</td>
-                          <td style={{ ...td, fontWeight: 600 }}>{fMT(tt)}</td>
-                          <td style={{ ...td, color: '#BA7517', fontWeight: 500 }}>{m.mp_mt > 0 ? fMT(m.mp_mt) : '—'}</td>
-                          <td style={td}>{fRS(m.rs_f)}</td>
-                          <td style={td}>{fRS(m.rs_w)}</td>
-                          <td style={td}>{fRS(m.rs_nf)}</td>
-                          <td style={td}>{fRS(m.rs_m)}</td>
-                          <td style={{ ...td, fontWeight: 600 }}>{fRS(tr2)}</td>
-                          <td style={{ ...td, color: '#BA7517', fontWeight: 500 }}>{m.mp_rs > 0 ? fRS(m.mp_rs) : '—'}</td>
+                          <td style={td}>{renderCell(m, 'disp_ferrous', 'ferrous')}</td>
+                          <td style={td}>{renderCell(m, 'disp_wta', 'wta')}</td>
+                          <td style={td}>{renderCell(m, 'disp_nf', 'nf')}</td>
+                          <td style={td}>{renderCell(m, 'disp_misc', 'misc')}</td>
+                          <td style={{ ...td, fontWeight: 600 }}>{editModeSummary ? fMT(edit_tt) : fMT(disp_tt)}</td>
+                          <td style={{ ...td, color: '#BA7517', fontWeight: 500 }}>{renderCell(m, 'disp_mp_mt', 'mp_mt')}</td>
+                          <td style={td}>{renderCell(m, 'disp_rs_f', 'rs_f', true)}</td>
+                          <td style={td}>{renderCell(m, 'disp_rs_w', 'rs_w', true)}</td>
+                          <td style={td}>{renderCell(m, 'disp_rs_nf', 'rs_nf', true)}</td>
+                          <td style={td}>{renderCell(m, 'disp_rs_m', 'rs_m', true)}</td>
+                          <td style={{ ...td, fontWeight: 600 }}>{editModeSummary ? fRS(edit_tr2) : fRS(disp_tr2)}</td>
+                          <td style={{ ...td, color: '#BA7517', fontWeight: 500 }}>{renderCell(m, 'disp_mp_rs', 'mp_rs', true)}</td>
                         </tr>
                       );
                     })}
@@ -1561,7 +2078,7 @@ export function BvpScrapPosition() {
                 </table>
               </div>
               {/* Target vs Achievement */}
-              {tgt && (
+              {tgt && !editModeSummary && (
                 <div style={{ padding: '14px 18px', borderTop: '0.5px solid var(--bvp-border)' }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--bvp-text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Target vs Achievement</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 10 }}>
@@ -1591,7 +2108,7 @@ export function BvpScrapPosition() {
         return (
           <div className="bvp-view" id="bvp-print-summary">
             <div className="bvp-section-title">Session-wise Monthly Summary</div>
-            <div className="bvp-info-banner">ℹ️ Historical data 2023-24 se. Naye sessions ke entries automatically yahan add ho jayenge. M&amp;P items amber column mein dikhenge.</div>
+            <div className="bvp-info-banner">ℹ️ Historical data 2023-24 se. <strong>Edit Data</strong> par click karein manually entries change karne ke liye. Agar Lot-wise total se data mismatch hota hai toh ⚠️ warning dikhegi.</div>
             <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
               {allSumSessions.map((s, i) => (
                 <button key={s}
@@ -1721,6 +2238,104 @@ export function BvpScrapPosition() {
           </div>
         </div>
       )}
+
+      {/* Lot-wise vs Summary Diff Modal — Portal to fix position:fixed in transformed parents */}
+      {diffModal.open && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(2px)' }}>
+          <div style={{ background: 'var(--bvp-surface)', width: '90%', maxWidth: 820, borderRadius: 14, padding: 24, boxShadow: '0 24px 50px rgba(0,0,0,0.25)', maxHeight: '88vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 17 }}>⚠️ Lot-wise vs Summary Table — Difference Report</h3>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--bvp-text2)' }}>Session: <strong>{diffModal.sess}</strong> | Sirf un months ka data show ho raha hai jisme fark hai</p>
+              </div>
+              <button className="bvp-btn bvp-btn-ghost" style={{ fontSize: 18, padding: '0 10px' }} onClick={() => setDiffModal({ open: false, sess: '', rows: [] })}>×</button>
+            </div>
+
+            {/* Legend */}
+            <div style={{ display: 'flex', gap: 16, marginBottom: 14, fontSize: 11, flexWrap: 'wrap' }}>
+              <span style={{ background: '#E6F1FB', border: '1px solid #185FA5', borderRadius: 6, padding: '3px 10px', color: '#185FA5' }}>📊 Summary Table value (aapne enter kiya / historical)</span>
+              <span style={{ background: '#E6F5EE', border: '1px solid #1D9E75', borderRadius: 6, padding: '3px 10px', color: '#0D6E4F' }}>📋 Lot-wise entry se calculated</span>
+              <span style={{ background: '#FFF3CD', border: '1px solid #BA7517', borderRadius: 6, padding: '3px 10px', color: '#7A4F00' }}>± Difference (Summary - Lot-wise)</span>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: 'var(--bvp-surface2)' }}>
+                    <th style={{ padding: '8px 10px', textAlign: 'left', border: '1px solid var(--bvp-border)', fontWeight: 600 }}>Month</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center', border: '1px solid var(--bvp-border)', background: '#E6F1FB', color: '#185FA5', fontWeight: 600 }} colSpan={4}>Summary Table (MT)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center', border: '1px solid var(--bvp-border)', background: '#E6F5EE', color: '#0D6E4F', fontWeight: 600 }} colSpan={4}>Lot-wise Entries (MT)</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'center', border: '1px solid var(--bvp-border)', background: '#FFF3CD', color: '#7A4F00', fontWeight: 600 }} colSpan={4}>Difference (MT)</th>
+                  </tr>
+                  <tr style={{ background: 'var(--bvp-surface2)', fontSize: 10 }}>
+                    <th style={{ border: '1px solid var(--bvp-border)', padding: '4px 8px' }}></th>
+                    {['Ferrous','WTA','NF','Misc'].map(h => <th key={h} style={{ border: '1px solid var(--bvp-border)', padding: '4px 8px', background: '#E6F1FB', color: '#185FA5' }}>{h}</th>)}
+                    {['Ferrous','WTA','NF','Misc'].map(h => <th key={'l'+h} style={{ border: '1px solid var(--bvp-border)', padding: '4px 8px', background: '#E6F5EE', color: '#0D6E4F' }}>{h}</th>)}
+                    {['Ferrous','WTA','NF','Misc'].map(h => <th key={'d'+h} style={{ border: '1px solid var(--bvp-border)', padding: '4px 8px', background: '#FFF3CD', color: '#7A4F00' }}>{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {diffModal.rows.map((r, i) => (
+                    <tr key={i} style={{ background: r.hasDiff ? '#FFFBF0' : 'transparent', opacity: r.hasDiff ? 1 : 0.5 }}>
+                      <td style={{ padding: '6px 10px', border: '1px solid var(--bvp-border)', fontWeight: r.hasDiff ? 600 : 400, color: r.hasDiff ? 'var(--bvp-text)' : 'var(--bvp-text3)' }}>
+                        {r.hasDiff ? '⚠️ ' : '✅ '}{r.mo}
+                      </td>
+                      {/* Summary values */}
+                      {[r.summF, r.summW, r.summN, r.summM].map((v, vi) => (
+                        <td key={vi} style={{ padding: '6px 10px', border: '1px solid var(--bvp-border)', textAlign: 'right', background: '#EBF3FC' }}>{v ? (+v).toFixed(3) : '—'}</td>
+                      ))}
+                      {/* Lot values */}
+                      {[r.lotF, r.lotW, r.lotN, r.lotM].map((v, vi) => (
+                        <td key={vi} style={{ padding: '6px 10px', border: '1px solid var(--bvp-border)', textAlign: 'right', background: '#EBF5F0' }}>{v ? (+v).toFixed(3) : '—'}</td>
+                      ))}
+                      {/* Diff values */}
+                      {[r.diffF, r.diffW, r.diffN, r.diffM].map((v, vi) => {
+                        const isPos = v > 0.001, isNeg = v < -0.001, same = Math.abs(v) <= 0.001;
+                        return (
+                          <td key={vi} style={{ padding: '6px 10px', border: '1px solid var(--bvp-border)', textAlign: 'right', fontWeight: 600, background: same ? '#F5FDF8' : '#FFF8E1', color: same ? '#0D6E4F' : isPos ? '#BA7517' : '#CC2222' }}>
+                            {same ? '—' : (isPos ? '+' : '') + (+v).toFixed(3)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background: 'var(--bvp-surface2)', fontWeight: 700 }}>
+                    <td style={{ padding: '8px 10px', border: '1px solid var(--bvp-border)' }}>TOTAL</td>
+                    {['summF','summW','summN','summM'].map(f => (
+                      <td key={f} style={{ padding: '8px 10px', border: '1px solid var(--bvp-border)', textAlign: 'right', background: '#EBF3FC' }}>
+                        {(diffModal.rows.reduce((a, r) => a + (r[f] || 0), 0)).toFixed(3)}
+                      </td>
+                    ))}
+                    {['lotF','lotW','lotN','lotM'].map(f => (
+                      <td key={f} style={{ padding: '8px 10px', border: '1px solid var(--bvp-border)', textAlign: 'right', background: '#EBF5F0' }}>
+                        {(diffModal.rows.reduce((a, r) => a + (r[f] || 0), 0)).toFixed(3)}
+                      </td>
+                    ))}
+                    {['diffF','diffW','diffN','diffM'].map(f => {
+                      const total = diffModal.rows.reduce((a, r) => a + (r[f] || 0), 0);
+                      return (
+                        <td key={f} style={{ padding: '8px 10px', border: '1px solid var(--bvp-border)', textAlign: 'right', background: '#FFF8E1', color: Math.abs(total) > 0.01 ? '#BA7517' : '#0D6E4F' }}>
+                          {Math.abs(total) <= 0.01 ? '—' : (total > 0 ? '+' : '') + total.toFixed(3)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div style={{ marginTop: 14, padding: '10px 14px', background: '#FFF9F0', border: '1px solid #E8D5B5', borderRadius: 8, fontSize: 12, color: '#7A4F00' }}>
+              <strong>📌 Difference kyun hota hai?</strong> Lot-wise entries me sirf jo aapne manually ek-ek lot enter kiya hai woh count hota hai. Summary Table me historic/Excel se manually bhara hua data hota hai. Agar koi lot entry nahi ki ya incomplete hai, toh wahan difference aata hai. Isse app ka data cross-verify ho jata hai.
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button className="bvp-btn bvp-btn-primary" onClick={() => setDiffModal({ open: false, sess: '', rows: [] })}>Samajh Gaya, Band Karo</button>
+            </div>
+          </div>
+        </div>
+      , document.body)}
 
       <Toast message={toast.message} show={toast.show} />
     </div>
