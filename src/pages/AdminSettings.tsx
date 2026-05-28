@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { db, useLiveQuery } from '../db/db';
 import { ProtectedView } from '../components/ProtectedView';
 import { useAuth } from '../components/AuthProvider';

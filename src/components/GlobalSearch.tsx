@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { db, useLiveQuery } from '../db/db';
 import { Search, X, Package, TrendingDown, TrendingUp, Tag } from 'lucide-react';

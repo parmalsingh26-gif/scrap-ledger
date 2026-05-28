@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Chart, registerables } from 'chart.js';
 import { db } from '../db/db';
-import type { BvpScrapEntry, BvpCoachEntry, BvpSurveyEntry, BvpMpEntry } from '../db/db';
+import type { BvpScrapEntry, BvpCoachEntry, BvpSurveyEntry, BvpMpEntry, BvpMonthlyManualEntry } from '../db/db';
 import { exportPDF, printElement, exportSummaryExcel, exportAllRecordsExcel, exportDashboardExcel, exportWord } from '../utils/bvpExport';
 
 Chart.register(...registerables);
@@ -222,7 +222,7 @@ export function BvpScrapPosition() {
   useEffect(() => { 
     loadData(); 
     return () => {
-      Object.values(chartInstances.current).forEach(c => c.destroy());
+      Object.values(chartInstances.current).forEach((c: any) => c.destroy());
       chartInstances.current = {};
     };
   }, [loadData]);
@@ -314,7 +314,7 @@ export function BvpScrapPosition() {
     });
 
     // Override with manual monthly entries if they exist for a session
-    const manSessions = Array.from(new Set(manualMonthlyEntries.map(e => e.session)));
+    const manSessions = Array.from(new Set(manualMonthlyEntries.map(e => e.session))) as string[];
     manSessions.forEach(sess => {
       const entries = manualMonthlyEntries.filter(m => m.session === sess);
       let ferrous = 0, wta = 0, nf = 0, misc = 0, rev = 0;

@@ -13,6 +13,7 @@ import { BvpScrapPosition } from './pages/BvpScrapPosition';
 import { TotalScrapPosition } from './pages/TotalScrapPosition';
 import { LoginPage } from './pages/LoginPage';
 import { AuthProvider, useAuth } from './components/AuthProvider';
+import { SyncStatus } from './components/SyncStatus';
 
 function AppContent() {
   const { isLoggedIn } = useAuth();
@@ -40,6 +41,7 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
+      <SyncStatus />
       <AppContent />
     </AuthProvider>
   );

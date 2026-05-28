@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react';
-
+import { 
+  addToOfflineQueue, 
+  saveToCache, 
+  getFromCache, 
+  applyPendingQueueToCache, 
+  getOfflineQueue,
+  removeFromOfflineQueue
+} from './offlineSync';
 export interface Category {
   id?: number;
   name: string;
@@ -163,27 +170,88 @@ export interface BvpMonthlyManualEntry {
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5001/api';
 
 const listeners = new Set<() => void>();
-const notifyChange = () => {
+export const notifyChange = () => {
   listeners.forEach(l => l());
 };
 
-async function apiFetch(endpoint: string, options?: RequestInit) {
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers
+export const processOfflineQueue = async () => {
+  if (!navigator.onLine) return;
+  const queue = getOfflineQueue();
+  if (queue.length === 0) return;
+  
+  window.dispatchEvent(new Event('offline-sync-started'));
+  
+  for (const req of queue) {
+    try {
+      await fetch(`${API_BASE}${req.endpoint}`, {
+        method: req.method,
+        headers: { 'Content-Type': 'application/json' },
+        body: req.body ? JSON.stringify(req.body) : undefined
+      });
+      removeFromOfflineQueue(req.id);
+    } catch (e) {
+      console.error('Failed to sync offline request', req, e);
+      if (!navigator.onLine) break;
     }
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API Error ${res.status}: ${text}`);
   }
-  const data = await res.json();
-  if (options && options.method && options.method !== 'GET') {
-    notifyChange();
+  
+  window.dispatchEvent(new Event('offline-sync-finished'));
+  notifyChange();
+};
+
+window.addEventListener('online', processOfflineQueue);
+
+async function apiFetch(endpoint: string, options?: RequestInit) {
+  const method = options?.method || 'GET';
+  
+  if (!navigator.onLine) {
+    if (method === 'GET') {
+      const cached = getFromCache(endpoint);
+      if (cached) return applyPendingQueueToCache(endpoint, cached);
+      throw new Error('Offline and no cache available');
+    } else {
+      const req = addToOfflineQueue(endpoint, method, options?.body);
+      notifyChange();
+      return { id: req.id, ...JSON.parse((options?.body as string) || '{}'), _isPending: true };
+    }
   }
-  return data;
+
+  try {
+    const res = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+      }
+    });
+    
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`API Error ${res.status}: ${text}`);
+    }
+    
+    const data = await res.json();
+    
+    if (method === 'GET') {
+      saveToCache(endpoint, data);
+      return applyPendingQueueToCache(endpoint, data);
+    } else {
+      notifyChange();
+    }
+    return data;
+  } catch (err: any) {
+    if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+      if (method === 'GET') {
+        const cached = getFromCache(endpoint);
+        if (cached) return applyPendingQueueToCache(endpoint, cached);
+      } else {
+        const req = addToOfflineQueue(endpoint, method, options?.body);
+        notifyChange();
+        return { id: req.id, ...JSON.parse((options?.body as string) || '{}'), _isPending: true };
+      }
+    }
+    throw err;
+  }
 }
 
 export function useLiveQuery<T>(queryFn: () => Promise<T>, deps: any[] = []): T | undefined {
