@@ -119,6 +119,18 @@ export function Layout({ children }: { children: ReactNode }) {
               <span>Logout</span>
             </button>
           </div>
+          
+          {/* Designer Credit */}
+          <div className="mt-4 pt-4 border-t border-surface-variant text-center pb-2">
+            <p className="text-[10px] text-outline-variant font-medium tracking-wider uppercase mb-1">Designed & Developed by</p>
+            <div className="group relative inline-block">
+              <span className="font-bold text-primary dark:text-inverse-primary text-sm tracking-wide transition-all duration-300 inline-block group-hover:scale-105 group-hover:-translate-y-1 group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-emerald-500 group-hover:to-blue-500">
+                Parmal Singh Gurjar
+              </span>
+              <div className="absolute -inset-x-2 -inset-y-1 bg-gradient-to-r from-emerald-500/10 to-blue-500/10 rounded-lg blur opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <p className="text-[9px] text-outline opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0 absolute w-full left-0 mt-0.5 font-medium">Web Architect</p>
+            </div>
+          </div>
         </div>
       </nav>
 

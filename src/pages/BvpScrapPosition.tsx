@@ -101,7 +101,13 @@ function getBucketedWeights(e: Partial<BvpScrapEntry>) {
   const t = e.type || '';
   const isWta = t === 'WTA';
   const isNf = t === 'Non Ferrous';
-  const isMisc = ['Rubber', 'Wooden', 'PVC/Plastic', 'Battery', 'Mix/Junk', 'Other', 'Machine/Plant'].includes(t);
+  // FIX: Match exact dropdown values used in the form
+  const isMisc = [
+    'Rubber', 'Wooden', 'PVC Plastic', 'Battery', 'Mix Kachara', 'Other',
+    'Machine Plant', 'Oil Grease',
+    // Legacy / alternate spellings kept for backwards compatibility
+    'PVC/Plastic', 'Mix/Junk', 'Machine/Plant',
+  ].includes(t);
   
   let wta = +e.wt_wta! || 0;
   let nf = +e.wt_nf! || 0;
@@ -150,6 +156,9 @@ export function BvpScrapPosition() {
 
   const [toast, setToast] = useState({ message: '', show: false });
   const [scrapFilter, setScrapFilter] = useState('all');
+  // FIX: Separate search state for Entry and Summary tabs to avoid cross-tab filtering
+  const [entrySearchTerm, setEntrySearchTerm] = useState('');
+  const [summarySearchTerm, setSummarySearchTerm] = useState('');
   const [coachFilter, setCoachFilter] = useState('all');
   const [surveyFilter, setSurveyFilter] = useState('all');
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -459,7 +468,11 @@ export function BvpScrapPosition() {
 
   useEffect(() => {
     if (activeView === 'dashboard') {
-      setTimeout(() => buildCharts(), 100);
+      // FIX: Use requestAnimationFrame instead of setTimeout to guarantee canvases exist in DOM before rendering
+      const rafId = requestAnimationFrame(() => {
+        requestAnimationFrame(() => buildCharts());
+      });
+      return () => cancelAnimationFrame(rafId);
     }
   }, [activeView, buildCharts]);
 
@@ -867,8 +880,22 @@ export function BvpScrapPosition() {
     ...surveyEntries.map(x => ({ session: x.session, type: 'Lot', date: x.offer_date, desc: x.lot + ': ' + x.desc.slice(0, 50), qty: x.qty + ' ' + x.unit, amt: x.bid })),
   ].sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 10);
 
-  // Filtered tables
-  const filteredScrap = scrapFilter === 'all' ? scrapEntries : scrapEntries.filter(x => x.session === scrapFilter);
+  // Filtered tables — each tab has its own independent search term
+  const sessionFiltered = scrapFilter === 'all' ? scrapEntries : scrapEntries.filter(x => x.session === scrapFilter);
+  const filteredScrapEntry = sessionFiltered.filter(x =>
+    !entrySearchTerm ||
+    x.lot?.toLowerCase().includes(entrySearchTerm.toLowerCase()) ||
+    x.desc?.toLowerCase().includes(entrySearchTerm.toLowerCase()) ||
+    x.party?.toLowerCase().includes(entrySearchTerm.toLowerCase())
+  );
+  const filteredScrapSummary = sessionFiltered.filter(x =>
+    !summarySearchTerm ||
+    x.lot?.toLowerCase().includes(summarySearchTerm.toLowerCase()) ||
+    x.desc?.toLowerCase().includes(summarySearchTerm.toLowerCase()) ||
+    x.party?.toLowerCase().includes(summarySearchTerm.toLowerCase())
+  );
+  // Keep filteredScrap as alias for Entry tab (used elsewhere)
+  const filteredScrap = filteredScrapEntry;
   const filteredCoach = coachFilter === 'all' ? coachEntries : coachEntries.filter(x => x.session === coachFilter);
   const filteredSurvey = surveyFilter === 'all' ? surveyEntries : surveyEntries.filter(x => x.session === surveyFilter);
 
@@ -1310,11 +1337,19 @@ export function BvpScrapPosition() {
             <div className="bvp-entries-header">
               <h3>Lot-wise Entries — {currentSession}</h3>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input 
+                  type="text" 
+                  placeholder="Search lot, desc, party..." 
+                  className="bvp-input" 
+                  style={{ fontSize: 12, padding: '4px 8px', width: '200px' }}
+                  value={entrySearchTerm}
+                  onChange={e => setEntrySearchTerm(e.target.value)}
+                />
                 <select className="bvp-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={scrapFilter} onChange={e => setScrapFilter(e.target.value)}>
                   <option value="all">All Sessions</option>
                   {allSessions.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-                <span style={{ fontSize: 12, color: 'var(--bvp-text3)' }}>{filteredScrap.length} entries</span>
+                <span style={{ fontSize: 12, color: 'var(--bvp-text3)' }}>{filteredScrapEntry.length} entries</span>
               </div>
             </div>
             <div className="bvp-tbl-wrap">
@@ -1351,11 +1386,19 @@ export function BvpScrapPosition() {
             <div className="bvp-entries-header">
               <h3>Lot-wise Summary — {currentSession}</h3>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input 
+                  type="text" 
+                  placeholder="Search lot, desc, party..." 
+                  className="bvp-input" 
+                  style={{ fontSize: 12, padding: '4px 8px', width: '200px' }}
+                  value={summarySearchTerm}
+                  onChange={e => setSummarySearchTerm(e.target.value)}
+                />
                 <select className="bvp-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={scrapFilter} onChange={e => setScrapFilter(e.target.value)}>
                   <option value="all">All Sessions</option>
                   {allSessions.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-                <span style={{ fontSize: 12, color: 'var(--bvp-text3)' }}>{filteredScrap.length} entries</span>
+                <span style={{ fontSize: 12, color: 'var(--bvp-text3)' }}>{filteredScrapSummary.length} entries</span>
               </div>
             </div>
             
@@ -1387,7 +1430,7 @@ export function BvpScrapPosition() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredScrap.length > 0 ? [...filteredScrap].reverse().map(r => (
+                  {filteredScrapSummary.length > 0 ? [...filteredScrapSummary].reverse().map(r => (
                     <tr key={r.id}>
                       <td style={{ border: '1px solid #ddd', padding: '4px' }}>{fmt(r.date_from)}</td>
                       <td style={{ border: '1px solid #ddd', padding: '4px' }}>{fmt(r.date_to) === fmt(r.date_from) ? '' : fmt(r.date_to)}</td>
@@ -1408,9 +1451,9 @@ export function BvpScrapPosition() {
                   )) : <tr><td colSpan={15} style={{ border: '1px solid #ddd', padding: '10px' }} className="bvp-empty-state">No entries yet. Lot-wise Entry mein add karein.</td></tr>}
                   
                   {/* Grand Total Row */}
-                  {filteredScrap.length > 0 && (() => {
+                  {filteredScrapSummary.length > 0 && (() => {
                     let tWTA=0, tTB=0, tMS=0, tNF=0, tOther=0, tTotal=0, tAmt=0;
-                    filteredScrap.forEach(r => {
+                    filteredScrapSummary.forEach(r => {
                       tWTA += Number(r.wt_wta || 0);
                       tTB += Number(r.wt_tb || 0);
                       tMS += Number(r.wt_ms || 0);
