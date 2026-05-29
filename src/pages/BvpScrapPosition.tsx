@@ -169,8 +169,10 @@ export function BvpScrapPosition() {
 
   // Bulk Import States
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importMode, setImportMode] = useState<'upload' | 'paste'>('upload');
   const [importDataPreview, setImportDataPreview] = useState<any>(null);
   const [importLoading, setImportLoading] = useState(false);
+  const [pasteText, setPasteText] = useState('');
 
   // Diff Modal State
   const [diffModal, setDiffModal] = useState<{ open: boolean; sess: string; rows: any[] }>({ open: false, sess: '', rows: [] });
@@ -749,6 +751,7 @@ export function BvpScrapPosition() {
       showToast(`✓ Import successful! Added ${lotCount} lot entries and ${monthCount} monthly summaries.`);
       setImportModalOpen(false);
       setImportDataPreview(null);
+      setPasteText('');
       await loadData();
     } catch (err) {
       console.error('Import error:', err);
@@ -968,8 +971,8 @@ export function BvpScrapPosition() {
           )}
 
           {/* Import Button */}
-          <button className="bvp-btn bvp-btn-outline" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => setImportModalOpen(true)}>
-            📥 Import JSON
+          <button className="bvp-btn bvp-btn-outline" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }} onClick={() => { setImportMode('upload'); setImportModalOpen(true); }}>
+            📥 Upload JSON
           </button>
         </div>
       </div>
@@ -982,11 +985,39 @@ export function BvpScrapPosition() {
           {/* Outer shell: fixed height, NO overflow — scroll only inside */}
           <div style={{ background: 'var(--bvp-surface)', width: '90%', maxWidth: 700, borderRadius: 12, boxShadow: '0 20px 40px rgba(0,0,0,0.2)', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-            {/* ── STICKY TOP: Title + File picker ── */}
+            {/* ── STICKY TOP: Title + File picker/textarea ── */}
             <div style={{ padding: '20px 24px 14px', borderBottom: '1px solid var(--bvp-border)', flexShrink: 0 }}>
-              <h3 style={{ marginTop: 0, marginBottom: 6, fontSize: 18 }}>📥 Bulk Import via JSON</h3>
-              <p style={{ fontSize: 12, color: 'var(--bvp-text2)', margin: '0 0 12px' }}>JSON file select karo jisme <code>lot_wise_entries</code> aur/ya <code>monthly_summary_entries</code> arrays hain.</p>
-              <input type="file" accept=".json" onChange={handleFileUpload} style={{ width: '100%', cursor: 'pointer' }} />
+              <h3 style={{ marginTop: 0, marginBottom: 6, fontSize: 18 }}>
+                {importMode === 'upload' ? '📥 Bulk Import via JSON File' : '📋 Paste JSON Data'}
+              </h3>
+              <p style={{ fontSize: 12, color: 'var(--bvp-text2)', margin: '0 0 12px' }}>
+                {importMode === 'upload' ? 'JSON file select karo jisme lot_wise_entries aur/ya monthly_summary_entries arrays hain.' : 'Apna JSON data yahan paste karo jisme lot_wise_entries aur/ya monthly_summary_entries arrays hain.'}
+              </p>
+              {importMode === 'upload' ? (
+                <input type="file" accept=".json" onChange={handleFileUpload} style={{ width: '100%', cursor: 'pointer' }} />
+              ) : (
+                <div style={{ display: 'flex', gap: 10, flexDirection: 'column' }}>
+                  <textarea 
+                    value={pasteText} 
+                    onChange={e => setPasteText(e.target.value)}
+                    placeholder="Paste your JSON here..."
+                    style={{ width: '100%', minHeight: '300px', height: '40vh', padding: '12px', fontFamily: 'monospace', fontSize: 13, borderRadius: 6, border: '1px solid var(--bvp-border)', background: 'var(--bvp-surface2)', color: 'var(--bvp-text)', resize: 'vertical', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}
+                  />
+                  <button className="bvp-btn bvp-btn-primary" onClick={() => {
+                    if (!pasteText.trim()) return;
+                    try {
+                      const json = JSON.parse(pasteText);
+                      if (json.lot_wise_entries || json.monthly_summary_entries) {
+                        setImportDataPreview(json);
+                      } else {
+                        showToast('⚠️ Invalid JSON format. Expected lot_wise_entries or monthly_summary_entries.');
+                      }
+                    } catch (err) {
+                      showToast('⚠️ Invalid JSON format. Please check your data.');
+                    }
+                  }} style={{ alignSelf: 'flex-start' }}>Preview JSON</button>
+                </div>
+              )}
             </div>
 
             {/* ── SCROLLABLE MIDDLE: Preview tables ── */}
@@ -1052,7 +1083,7 @@ export function BvpScrapPosition() {
 
             {/* ── STICKY BOTTOM: Action buttons ── */}
             <div style={{ padding: '14px 24px', borderTop: '1px solid var(--bvp-border)', display: 'flex', justifyContent: 'flex-end', gap: 10, flexShrink: 0, background: 'var(--bvp-surface)' }}>
-              <button className="bvp-btn bvp-btn-ghost" onClick={() => { setImportModalOpen(false); setImportDataPreview(null); }}>❌ Cancel</button>
+              <button className="bvp-btn bvp-btn-ghost" onClick={() => { setImportModalOpen(false); setImportDataPreview(null); setPasteText(''); }}>❌ Cancel</button>
               <button className="bvp-btn bvp-btn-primary" onClick={confirmImport} disabled={!importDataPreview || importLoading} style={{ background: '#1D9E75' }}>
                 {importLoading ? 'Saving...' : '✓ Verify & Save'}
               </button>
@@ -1081,9 +1112,9 @@ export function BvpScrapPosition() {
         <button
           className="bvp-btn bvp-btn-outline"
           style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5, marginLeft: 'auto', padding: '6px 14px', flexShrink: 0 }}
-          onClick={() => setImportModalOpen(true)}
+          onClick={() => { setImportMode('paste'); setImportModalOpen(true); }}
         >
-          📥 Import JSON
+          📋 Paste JSON
         </button>
       </div>
 
