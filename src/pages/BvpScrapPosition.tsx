@@ -173,6 +173,16 @@ export function BvpScrapPosition() {
   const [importDataPreview, setImportDataPreview] = useState<any>(null);
   const [importLoading, setImportLoading] = useState(false);
   const [pasteText, setPasteText] = useState('');
+  // Replace option: which sessions should be replaced on import
+  const [replaceMode, setReplaceMode] = useState<'add' | 'replace'>('replace');
+
+  // Inline edit states for Lot-wise entries
+  const [editingScrapId, setEditingScrapId] = useState<string | null>(null);
+  const [editingScrapData, setEditingScrapData] = useState<Partial<BvpScrapEntry>>({});
+
+  // Batch Manager states
+  const [batchView, setBatchView] = useState<'list' | 'entries'>('list');
+  const [batchManagerSess, setBatchManagerSess] = useState<string | null>(null);
 
   // Diff Modal State
   const [diffModal, setDiffModal] = useState<{ open: boolean; sess: string; rows: any[] }>({ open: false, sess: '', rows: [] });
@@ -708,47 +718,47 @@ export function BvpScrapPosition() {
     e.target.value = ''; // reset input
   };
 
+  // Get unique sessions from preview data
+  const getPreviewSessions = (preview: any): string[] => {
+    const sessions = new Set<string>();
+    preview?.lot_wise_entries?.forEach((e: any) => e.session && sessions.add(e.session));
+    preview?.monthly_summary_entries?.forEach((e: any) => e.session && sessions.add(e.session));
+    return Array.from(sessions).sort().reverse();
+  };
+
   const confirmImport = async () => {
     if (!importDataPreview) return;
     setImportLoading(true);
     try {
-      let lotCount = 0;
-      let monthCount = 0;
+      const previewSessions = getPreviewSessions(importDataPreview);
 
-      if (importDataPreview.lot_wise_entries?.length) {
-        for (const entry of importDataPreview.lot_wise_entries) {
-          // Create deterministic ID to prevent duplicates if imported multiple times
-          const safeLot = (entry.lot || 'NOLOT').replace(/[^a-zA-Z0-9]/g, '');
-          // Add wt_total to ID to ensure uniqueness even if lot is empty and dates are same
-          const safeDate = extractMonthKey(entry.date_from) ? (entry.date_from || 'NODATE').replace(/[^a-zA-Z0-9]/g, '') : 'NODATE';
-          const safeType = (entry.type || 'NOTYPE').replace(/[^a-zA-Z0-9]/g, '');
-          const safeWt = String(entry.wt_total || '0').replace('.', '_');
-          const id = `BVP_L_${entry.session}_${safeDate}_${safeLot}_${safeType}_${safeWt}`;
-          
-          const newEntry: BvpScrapEntry = {
-            ...entry,
-            id,
-            updatedAt: Date.now()
-          };
-          await db.bvpScrapEntries.put(newEntry);
-          lotCount++;
-        }
+      // Build entries with deterministic IDs
+      const lotEntries = (importDataPreview.lot_wise_entries || []).map((entry: any) => {
+        const safeLot = (entry.lot || 'NOLOT').replace(/[^a-zA-Z0-9]/g, '');
+        const safeDate = extractMonthKey(entry.date_from) ? (entry.date_from || 'NODATE').replace(/[^a-zA-Z0-9]/g, '') : 'NODATE';
+        const safeType = (entry.type || 'NOTYPE').replace(/[^a-zA-Z0-9]/g, '');
+        const safeWt = String(entry.wt_total || '0').replace('.', '_');
+        const id = `BVP_L_${entry.session}_${safeDate}_${safeLot}_${safeType}_${safeWt}`;
+        return { ...entry, id };
+      });
+
+      const monthEntries = (importDataPreview.monthly_summary_entries || []).map((entry: any) => ({
+        ...entry,
+        id: `${entry.session}_${entry.month}`
+      }));
+
+      // Call batch import API — one single call
+      const result = await (db as any).bvpBatchImport({
+        lot_wise_entries: lotEntries,
+        monthly_summary_entries: monthEntries,
+        replace_sessions: replaceMode === 'replace' ? previewSessions : []
+      });
+
+      if (result?.success) {
+        showToast(`✓ Import successful! ${result.lotCount || lotEntries.length} lot entries, ${result.monthCount || monthEntries.length} monthly summaries saved.`);
+      } else {
+        showToast('✓ Import completed!');
       }
-
-      if (importDataPreview.monthly_summary_entries?.length) {
-        for (const entry of importDataPreview.monthly_summary_entries) {
-          const id = `${entry.session}_${entry.month}`;
-          const newEntry: BvpMonthlyManualEntry = {
-            ...entry,
-            id,
-            updatedAt: Date.now()
-          };
-          await db.bvpMonthlyManualEntries.put(newEntry);
-          monthCount++;
-        }
-      }
-
-      showToast(`✓ Import successful! Added ${lotCount} lot entries and ${monthCount} monthly summaries.`);
       setImportModalOpen(false);
       setImportDataPreview(null);
       setPasteText('');
@@ -758,6 +768,53 @@ export function BvpScrapPosition() {
       showToast('⚠️ Import failed. Check console for details.');
     } finally {
       setImportLoading(false);
+    }
+  };
+
+  /* ===== INLINE EDIT SCRAP ENTRY ===== */
+  const startEditScrap = (entry: BvpScrapEntry) => {
+    setEditingScrapId(entry.id);
+    setEditingScrapData({ ...entry });
+  };
+
+  const cancelEditScrap = () => {
+    setEditingScrapId(null);
+    setEditingScrapData({});
+  };
+
+  const saveEditScrap = async () => {
+    if (!editingScrapId || !editingScrapData) return;
+    try {
+      // Recalculate total
+      const wt_total = +(
+        (+editingScrapData.wt_wta! || 0) + (+editingScrapData.wt_tb! || 0) +
+        (+editingScrapData.wt_ms! || 0) + (+editingScrapData.wt_nf! || 0) +
+        (+editingScrapData.wt_other! || 0)
+      ).toFixed(3);
+      const rate = +editingScrapData.rate! || 0;
+      const amount = rate && wt_total ? Math.round(rate * wt_total) : (+editingScrapData.amount! || 0);
+      const updated = { ...editingScrapData, wt_total, amount };
+      await (db as any).bvpScrapEntries.update(editingScrapId, updated);
+      showToast('✓ Entry updated successfully!');
+      setEditingScrapId(null);
+      setEditingScrapData({});
+      await loadData();
+    } catch (err) {
+      console.error('Edit scrap error:', err);
+      showToast('⚠️ Update failed. Check console.');
+    }
+  };
+
+  /* ===== DELETE SESSION BATCH ===== */
+  const deleteSessionBatch = async (sess: string) => {
+    if (!confirm(`Session "${sess}" ki SAARI uploaded entries delete karein? (Seed data safe rahega)`)) return;
+    try {
+      const result = await (db as any).bvpDeleteSession(sess);
+      showToast(`✓ Session ${sess} data deleted. (${result.scrapDeleted || 0} scrap + ${result.monthDeleted || 0} monthly entries removed)`);
+      await loadData();
+    } catch (err) {
+      console.error('Delete session error:', err);
+      showToast('⚠️ Delete failed. Check console.');
     }
   };
 
@@ -983,7 +1040,7 @@ export function BvpScrapPosition() {
       {importModalOpen && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }}>
           {/* Outer shell: fixed height, NO overflow — scroll only inside */}
-          <div style={{ background: 'var(--bvp-surface)', width: '90%', maxWidth: 700, borderRadius: 12, boxShadow: '0 20px 40px rgba(0,0,0,0.2)', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ background: 'var(--bvp-surface)', width: '90%', maxWidth: 750, borderRadius: 12, boxShadow: '0 20px 40px rgba(0,0,0,0.2)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
             {/* ── STICKY TOP: Title + File picker/textarea ── */}
             <div style={{ padding: '20px 24px 14px', borderBottom: '1px solid var(--bvp-border)', flexShrink: 0 }}>
@@ -991,7 +1048,7 @@ export function BvpScrapPosition() {
                 {importMode === 'upload' ? '📥 Bulk Import via JSON File' : '📋 Paste JSON Data'}
               </h3>
               <p style={{ fontSize: 12, color: 'var(--bvp-text2)', margin: '0 0 12px' }}>
-                {importMode === 'upload' ? 'JSON file select karo jisme lot_wise_entries aur/ya monthly_summary_entries arrays hain.' : 'Apna JSON data yahan paste karo jisme lot_wise_entries aur/ya monthly_summary_entries arrays hain.'}
+                {importMode === 'upload' ? 'JSON file select karo jisme lot_wise_entries aur/ya monthly_summary_entries arrays hain.' : 'Apna JSON data yahan paste karo.'}
               </p>
               {importMode === 'upload' ? (
                 <input type="file" accept=".json" onChange={handleFileUpload} style={{ width: '100%', cursor: 'pointer' }} />
@@ -1001,7 +1058,7 @@ export function BvpScrapPosition() {
                     value={pasteText} 
                     onChange={e => setPasteText(e.target.value)}
                     placeholder="Paste your JSON here..."
-                    style={{ width: '100%', minHeight: '300px', height: '40vh', padding: '12px', fontFamily: 'monospace', fontSize: 13, borderRadius: 6, border: '1px solid var(--bvp-border)', background: 'var(--bvp-surface2)', color: 'var(--bvp-text)', resize: 'vertical', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}
+                    style={{ width: '100%', minHeight: '200px', height: '30vh', padding: '12px', fontFamily: 'monospace', fontSize: 13, borderRadius: 6, border: '1px solid var(--bvp-border)', background: 'var(--bvp-surface2)', color: 'var(--bvp-text)', resize: 'vertical', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}
                   />
                   <button className="bvp-btn bvp-btn-primary" onClick={() => {
                     if (!pasteText.trim()) return;
@@ -1018,63 +1075,108 @@ export function BvpScrapPosition() {
                   }} style={{ alignSelf: 'flex-start' }}>Preview JSON</button>
                 </div>
               )}
+
+              {/* Replace / Add mode toggle */}
+              {importDataPreview && (
+                <div style={{ marginTop: 12, padding: '10px 14px', background: replaceMode === 'replace' ? '#FFF3CD' : '#E6F5EE', borderRadius: 8, border: `1px solid ${replaceMode === 'replace' ? '#BA7517' : '#1D9E75'}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: replaceMode === 'replace' ? '#7A4F00' : '#0D6E4F' }}>
+                    {replaceMode === 'replace' ? '🔄 Replace Mode' : '➕ Add Mode'}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--bvp-text2)', flex: 1 }}>
+                    {replaceMode === 'replace'
+                      ? `Session(s): ${getPreviewSessions(importDataPreview).join(', ')} ki purani entries DELETE ho jayengi, naya data aayega`
+                      : 'Purana data rahega, naya data add hoga (duplicates ho sakte hain)'}
+                  </span>
+                  <button
+                    onClick={() => setReplaceMode(m => m === 'replace' ? 'add' : 'replace')}
+                    style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--bvp-border)', background: 'var(--bvp-surface)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    Switch to {replaceMode === 'replace' ? 'Add' : 'Replace'} Mode
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* ── SCROLLABLE MIDDLE: Preview tables ── */}
+            {/* ── SCROLLABLE MIDDLE: Batch-wise Preview ── */}
             <div style={{ overflowY: 'auto', padding: '16px 24px', flex: 1 }}>
-              {importDataPreview ? (
-                <div style={{ background: 'var(--bvp-surface2)', borderRadius: 8, padding: 16, fontSize: 13 }}>
-                  <strong>Data Summary:</strong>
-                  <ul style={{ margin: '8px 0 16px', paddingLeft: 20 }}>
-                    <li>{importDataPreview.lot_wise_entries?.length || 0} Lot-wise Entries found</li>
-                    <li>{importDataPreview.monthly_summary_entries?.length || 0} Monthly Summary Entries found</li>
-                  </ul>
+              {importDataPreview ? (() => {
+                const previewSessions = getPreviewSessions(importDataPreview);
+                return (
+                  <div>
+                    {/* Session Batch Cards */}
+                    {previewSessions.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--bvp-text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.05em' }}>📦 Batches in this file ({previewSessions.length} session{previewSessions.length > 1 ? 's' : ''})</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+                          {previewSessions.map(sess => {
+                            const lotCount = importDataPreview.lot_wise_entries?.filter((e: any) => e.session === sess).length || 0;
+                            const monthCount = importDataPreview.monthly_summary_entries?.filter((e: any) => e.session === sess).length || 0;
+                            const totalWt = importDataPreview.lot_wise_entries
+                              ?.filter((e: any) => e.session === sess)
+                              .reduce((a: number, e: any) => a + (+e.wt_total || 0), 0) || 0;
+                            return (
+                              <div key={sess} style={{ background: 'var(--bvp-surface2)', border: '1px solid var(--bvp-border)', borderRadius: 10, padding: '12px 14px' }}>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--bvp-accent)', marginBottom: 6 }}>{sess}</div>
+                                <div style={{ fontSize: 11, color: 'var(--bvp-text2)' }}>📋 {lotCount} lot entries</div>
+                                <div style={{ fontSize: 11, color: 'var(--bvp-text2)' }}>📊 {monthCount} monthly summaries</div>
+                                {totalWt > 0 && <div style={{ fontSize: 11, color: 'var(--bvp-text2)' }}>⚖️ Total: {totalWt.toFixed(3)} MT</div>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
-                  {importDataPreview.lot_wise_entries?.length > 0 && (
-                    <>
-                      <strong>Lot-wise Entries Preview:</strong>
-                      <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 8, border: '1px solid var(--bvp-border)', borderRadius: 4 }}>
-                        <table className="bvp-table" style={{ fontSize: 10, width: '100%' }}>
-                          <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}><tr><th>Session</th><th>Date</th><th>Lot</th><th>Type</th><th>Total Wt</th></tr></thead>
-                          <tbody>
-                            {importDataPreview.lot_wise_entries.map((e: any, i: number) => (
-                              <tr key={i}>
-                                <td>{e.session}</td>
-                                <td>{e.date_from}</td>
-                                <td>{e.lot}</td>
-                                <td>{e.type}</td>
-                                <td>{e.wt_total} MT</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
-                  )}
-                  
-                  {importDataPreview.monthly_summary_entries?.length > 0 && (
-                    <>
-                      <strong style={{ display: 'block', marginTop: 16 }}>Monthly Summary Preview:</strong>
-                      <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 8, border: '1px solid var(--bvp-border)', borderRadius: 4 }}>
-                        <table className="bvp-table" style={{ fontSize: 10, width: '100%' }}>
-                          <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}><tr><th>Session</th><th>Month</th><th>Ferrous</th><th>WTA</th><th>NF</th></tr></thead>
-                          <tbody>
-                            {importDataPreview.monthly_summary_entries.map((e: any, i: number) => (
-                              <tr key={i}>
-                                <td>{e.session}</td>
-                                <td>{e.month}</td>
-                                <td>{e.ferrous}</td>
-                                <td>{e.wta}</td>
-                                <td>{e.nf}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ) : (
+                    {/* Lot-wise entries table */}
+                    {importDataPreview.lot_wise_entries?.length > 0 && (
+                      <>
+                        <strong style={{ fontSize: 12 }}>Lot-wise Entries Preview ({importDataPreview.lot_wise_entries.length} total):</strong>
+                        <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 8, border: '1px solid var(--bvp-border)', borderRadius: 4 }}>
+                          <table className="bvp-table" style={{ fontSize: 10, width: '100%' }}>
+                            <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}><tr><th>Session</th><th>Date</th><th>Lot</th><th>Type</th><th>Total Wt</th><th>Amount ₹</th></tr></thead>
+                            <tbody>
+                              {importDataPreview.lot_wise_entries.map((e: any, i: number) => (
+                                <tr key={i}>
+                                  <td><span className="bvp-badge bvp-badge-oa" style={{ fontSize: 9 }}>{e.session}</span></td>
+                                  <td>{e.date_from}</td>
+                                  <td style={{ fontFamily: 'monospace', fontSize: 9 }}>{e.lot}</td>
+                                  <td>{e.type}</td>
+                                  <td style={{ fontWeight: 600 }}>{e.wt_total} MT</td>
+                                  <td>{e.amount ? '₹' + Number(e.amount).toLocaleString() : '-'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                    
+                    {/* Monthly summary entries table */}
+                    {importDataPreview.monthly_summary_entries?.length > 0 && (
+                      <>
+                        <strong style={{ display: 'block', marginTop: 16, fontSize: 12 }}>Monthly Summary Preview ({importDataPreview.monthly_summary_entries.length} total):</strong>
+                        <div style={{ maxHeight: 160, overflowY: 'auto', marginTop: 8, border: '1px solid var(--bvp-border)', borderRadius: 4 }}>
+                          <table className="bvp-table" style={{ fontSize: 10, width: '100%' }}>
+                            <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}><tr><th>Session</th><th>Month</th><th>Ferrous</th><th>WTA</th><th>NF</th><th>Misc</th></tr></thead>
+                            <tbody>
+                              {importDataPreview.monthly_summary_entries.map((e: any, i: number) => (
+                                <tr key={i}>
+                                  <td>{e.session}</td>
+                                  <td>{e.month}</td>
+                                  <td>{e.ferrous}</td>
+                                  <td>{e.wta}</td>
+                                  <td>{e.nf}</td>
+                                  <td>{e.misc}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })() : (
                 <div style={{ textAlign: 'center', color: 'var(--bvp-text3)', padding: '30px 0', fontSize: 13 }}>
                   Upar se JSON file select karo — Preview yahan dikhega
                 </div>
@@ -1082,11 +1184,16 @@ export function BvpScrapPosition() {
             </div>
 
             {/* ── STICKY BOTTOM: Action buttons ── */}
-            <div style={{ padding: '14px 24px', borderTop: '1px solid var(--bvp-border)', display: 'flex', justifyContent: 'flex-end', gap: 10, flexShrink: 0, background: 'var(--bvp-surface)' }}>
-              <button className="bvp-btn bvp-btn-ghost" onClick={() => { setImportModalOpen(false); setImportDataPreview(null); setPasteText(''); }}>❌ Cancel</button>
-              <button className="bvp-btn bvp-btn-primary" onClick={confirmImport} disabled={!importDataPreview || importLoading} style={{ background: '#1D9E75' }}>
-                {importLoading ? 'Saving...' : '✓ Verify & Save'}
-              </button>
+            <div style={{ padding: '14px 24px', borderTop: '1px solid var(--bvp-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexShrink: 0, background: 'var(--bvp-surface)' }}>
+              <div style={{ fontSize: 11, color: 'var(--bvp-text3)' }}>
+                {importDataPreview && `${importDataPreview.lot_wise_entries?.length || 0} lots + ${importDataPreview.monthly_summary_entries?.length || 0} monthly entries`}
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="bvp-btn bvp-btn-ghost" onClick={() => { setImportModalOpen(false); setImportDataPreview(null); setPasteText(''); }}>❌ Cancel</button>
+                <button className="bvp-btn bvp-btn-primary" onClick={confirmImport} disabled={!importDataPreview || importLoading} style={{ background: importLoading ? '#aaa' : '#1D9E75', minWidth: 130 }}>
+                  {importLoading ? '⏳ Saving...' : `✓ ${replaceMode === 'replace' ? 'Replace & ' : ''}Save`}
+                </button>
+              </div>
             </div>
 
           </div>
@@ -1094,6 +1201,7 @@ export function BvpScrapPosition() {
       , document.body)}
 
       {/* Top Nav Tabs */}
+
       <div className="bvp-top-nav">
         {[
           { id: 'dashboard', label: '📊 Dashboard' },
@@ -1104,6 +1212,7 @@ export function BvpScrapPosition() {
           { id: 'all-records', label: '📁 All Records' },
           { id: 'summary-table', label: '📊 Summary Table' },
           { id: 'mp-entry', label: '🔧 M&P Entry' },
+          { id: 'batch-manager', label: '📦 Batch Manager' },
         ].map(tab => (
           <button key={tab.id} className={`bvp-nav-btn ${activeView === tab.id ? 'active' : ''}`}
             onClick={() => setActiveView(tab.id)}>{tab.label}</button>
@@ -1387,20 +1496,57 @@ export function BvpScrapPosition() {
               <table className="bvp-table">
                 <thead><tr><th>Session</th><th>Date From</th><th>Date To</th><th>Type</th><th>Description</th><th>Total WT (MT)</th><th>Lot No.</th><th>Party</th><th>Rate ₹</th><th>Amount ₹</th><th></th></tr></thead>
                 <tbody>
-                  {filteredScrap.length > 0 ? [...filteredScrap].reverse().map(r => (
-                    <tr key={r.id}>
-                      <td><span className="bvp-badge bvp-badge-oa">{r.session}</span></td>
-                      <td>{fmt(r.date_from)}</td><td>{fmt(r.date_to)}</td>
-                      <td><span className="bvp-badge bvp-badge-auction">{r.type}</span></td>
-                      <td style={{ maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.desc}>{r.desc}</td>
-                      <td>{r.wt_total ? r.wt_total + ' MT' : '-'}</td>
-                      <td style={{ fontSize: 11, fontFamily: 'monospace' }}>{r.lot || '-'}</td>
-                      <td>{r.party}</td>
-                      <td>{r.rate ? '₹' + r.rate.toLocaleString() : '-'}</td>
-                      <td>{r.amount ? '₹' + (r.amount / 100000).toFixed(1) + 'L' : '-'}</td>
-                      <td><button className="bvp-del-btn" onClick={() => deleteEntry('scrap', r.id)}>×</button></td>
-                    </tr>
-                  )) : <tr><td colSpan={11} className="bvp-empty-state">No entries yet. Upar form se add karo.</td></tr>}
+                  {filteredScrap.length > 0 ? [...filteredScrap].reverse().map(r => {
+                    const isEditing = editingScrapId === r.id;
+                    if (isEditing) {
+                      return (
+                        <tr key={r.id} style={{ background: '#E6F1FB' }}>
+                          <td><span className="bvp-badge bvp-badge-oa" style={{ fontSize: 9 }}>{r.session}</span></td>
+                          <td><input type="date" className="bvp-input" style={{ fontSize: 10, padding: '2px 4px', width: 110 }} value={editingScrapData.date_from || ''} onChange={e => setEditingScrapData(p => ({ ...p, date_from: e.target.value }))} /></td>
+                          <td><input type="date" className="bvp-input" style={{ fontSize: 10, padding: '2px 4px', width: 110 }} value={editingScrapData.date_to || ''} onChange={e => setEditingScrapData(p => ({ ...p, date_to: e.target.value }))} /></td>
+                          <td>
+                            <select className="bvp-input" style={{ fontSize: 10, padding: '2px 4px' }} value={editingScrapData.type || ''} onChange={e => setEditingScrapData(p => ({ ...p, type: e.target.value }))}>
+                              {['WTA','MS Ferrous','Turning Boring','Non Ferrous','Rubber','Wooden','PVC Plastic','Oil Grease','Battery','Machine Plant','Mix Kachara','Other'].map(t => <option key={t}>{t}</option>)}
+                            </select>
+                          </td>
+                          <td><input type="text" className="bvp-input" style={{ fontSize: 10, padding: '2px 4px', width: 160 }} value={editingScrapData.desc || ''} onChange={e => setEditingScrapData(p => ({ ...p, desc: e.target.value }))} /></td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <input type="number" className="bvp-input" style={{ fontSize: 9, padding: '1px 3px', width: 60 }} placeholder="WTA" value={editingScrapData.wt_wta || ''} onChange={e => setEditingScrapData(p => ({ ...p, wt_wta: +e.target.value }))} />
+                              <input type="number" className="bvp-input" style={{ fontSize: 9, padding: '1px 3px', width: 60 }} placeholder="MS" value={editingScrapData.wt_ms || ''} onChange={e => setEditingScrapData(p => ({ ...p, wt_ms: +e.target.value }))} />
+                              <input type="number" className="bvp-input" style={{ fontSize: 9, padding: '1px 3px', width: 60 }} placeholder="NF" value={editingScrapData.wt_nf || ''} onChange={e => setEditingScrapData(p => ({ ...p, wt_nf: +e.target.value }))} />
+                              <input type="number" className="bvp-input" style={{ fontSize: 9, padding: '1px 3px', width: 60 }} placeholder="Other" value={editingScrapData.wt_other || ''} onChange={e => setEditingScrapData(p => ({ ...p, wt_other: +e.target.value }))} />
+                            </div>
+                          </td>
+                          <td><input type="text" className="bvp-input" style={{ fontSize: 10, padding: '2px 4px', width: 100, fontFamily: 'monospace' }} value={editingScrapData.lot || ''} onChange={e => setEditingScrapData(p => ({ ...p, lot: e.target.value }))} /></td>
+                          <td><input type="text" className="bvp-input" style={{ fontSize: 10, padding: '2px 4px', width: 100 }} value={editingScrapData.party || ''} onChange={e => setEditingScrapData(p => ({ ...p, party: e.target.value }))} /></td>
+                          <td><input type="number" className="bvp-input" style={{ fontSize: 10, padding: '2px 4px', width: 70 }} value={editingScrapData.rate || ''} onChange={e => setEditingScrapData(p => ({ ...p, rate: +e.target.value }))} /></td>
+                          <td><input type="number" className="bvp-input" style={{ fontSize: 10, padding: '2px 4px', width: 80 }} value={editingScrapData.amount || ''} onChange={e => setEditingScrapData(p => ({ ...p, amount: +e.target.value }))} /></td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <button className="bvp-btn bvp-btn-primary" style={{ fontSize: 10, padding: '3px 8px', display: 'block', marginBottom: 3 }} onClick={saveEditScrap}>✓ Save</button>
+                            <button className="bvp-btn bvp-btn-ghost" style={{ fontSize: 10, padding: '3px 6px' }} onClick={cancelEditScrap}>✕ Cancel</button>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return (
+                      <tr key={r.id}>
+                        <td><span className="bvp-badge bvp-badge-oa">{r.session}</span></td>
+                        <td>{fmt(r.date_from)}</td><td>{fmt(r.date_to)}</td>
+                        <td><span className="bvp-badge bvp-badge-auction">{r.type}</span></td>
+                        <td style={{ maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.desc}>{r.desc}</td>
+                        <td>{r.wt_total ? r.wt_total + ' MT' : '-'}</td>
+                        <td style={{ fontSize: 11, fontFamily: 'monospace' }}>{r.lot || '-'}</td>
+                        <td>{r.party}</td>
+                        <td>{r.rate ? '₹' + r.rate.toLocaleString() : '-'}</td>
+                        <td>{r.amount ? '₹' + (r.amount / 100000).toFixed(1) + 'L' : '-'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button className="bvp-btn bvp-btn-ghost" style={{ fontSize: 10, padding: '2px 6px', marginRight: 4 }} onClick={() => startEditScrap(r)} title="Edit this entry">✏️</button>
+                          <button className="bvp-del-btn" onClick={() => deleteEntry('scrap', r.id)}>×</button>
+                        </td>
+                      </tr>
+                    );
+                  }) : <tr><td colSpan={11} className="bvp-empty-state">No entries yet. Upar form se add karo.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -2313,7 +2459,121 @@ export function BvpScrapPosition() {
         </div>
       )}
 
+      {/* ==================== BATCH MANAGER VIEW ==================== */}
+      {activeView === 'batch-manager' && (() => {
+        // Group non-seed scrap entries by session
+        const SEED_IDS_SET = new Set(SEED_IDS);
+        const sessionGroups: Record<string, { lotCount: number; monthCount: number; totalWt: number; totalAmt: number; sessions: string[] }> = {};
+        
+        scrapEntries.filter(e => !SEED_IDS_SET.has(e.id)).forEach(e => {
+          if (!sessionGroups[e.session]) sessionGroups[e.session] = { lotCount: 0, monthCount: 0, totalWt: 0, totalAmt: 0, sessions: [] };
+          sessionGroups[e.session].lotCount++;
+          sessionGroups[e.session].totalWt += +e.wt_total || 0;
+          sessionGroups[e.session].totalAmt += +e.amount || 0;
+        });
+        manualMonthlyEntries.forEach(e => {
+          if (!sessionGroups[e.session]) sessionGroups[e.session] = { lotCount: 0, monthCount: 0, totalWt: 0, totalAmt: 0, sessions: [] };
+          sessionGroups[e.session].monthCount++;
+        });
+
+        const sessionList = Object.keys(sessionGroups).sort().reverse();
+        const selectedSessionEntries = batchManagerSess
+          ? scrapEntries.filter(e => e.session === batchManagerSess && !SEED_IDS_SET.has(e.id))
+          : [];
+
+        return (
+          <div className="bvp-view">
+            <div className="bvp-info-banner">📦 Batch Manager — Uploaded JSON data batches session-wise dekho aur delete karo. Seed data safe rahega.</div>
+
+            {sessionList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--bvp-text3)', fontSize: 14 }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>📦</div>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Koi uploaded batch nahi mila</div>
+                <div style={{ fontSize: 12 }}>JSON file upload karo → data yahan batch-wise dikhega</div>
+                <button className="bvp-btn bvp-btn-primary" style={{ marginTop: 16 }} onClick={() => { setImportMode('upload'); setImportModalOpen(true); }}>📥 Upload JSON</button>
+              </div>
+            ) : (
+              <div>
+                {/* Session Batch Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14, marginBottom: 24 }}>
+                  {sessionList.map(sess => {
+                    const g = sessionGroups[sess];
+                    const isSelected = batchManagerSess === sess;
+                    return (
+                      <div key={sess} style={{ background: isSelected ? 'var(--bvp-accent-light)' : 'var(--bvp-surface)', border: `2px solid ${isSelected ? 'var(--bvp-accent)' : 'var(--bvp-border)'}`, borderRadius: 12, padding: '14px 16px', cursor: 'pointer', transition: 'all .15s' }}
+                        onClick={() => setBatchManagerSess(isSelected ? null : sess)}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--bvp-accent)' }}>Session: {sess}</div>
+                          <button
+                            className="bvp-del-btn"
+                            style={{ fontSize: 12, padding: '3px 8px', borderRadius: 6 }}
+                            onClick={e => { e.stopPropagation(); deleteSessionBatch(sess); }}
+                            title="Is session ka saara uploaded data delete karo"
+                          >🗑️ Delete</button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                          <div style={{ background: 'var(--bvp-surface2)', borderRadius: 8, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 10, color: 'var(--bvp-text3)', textTransform: 'uppercase' }}>Lot Entries</div>
+                            <div style={{ fontSize: 18, fontWeight: 700 }}>{g.lotCount}</div>
+                          </div>
+                          <div style={{ background: 'var(--bvp-surface2)', borderRadius: 8, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 10, color: 'var(--bvp-text3)', textTransform: 'uppercase' }}>Monthly Summaries</div>
+                            <div style={{ fontSize: 18, fontWeight: 700 }}>{g.monthCount}</div>
+                          </div>
+                          <div style={{ background: 'var(--bvp-surface2)', borderRadius: 8, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 10, color: 'var(--bvp-text3)', textTransform: 'uppercase' }}>Total Weight</div>
+                            <div style={{ fontSize: 16, fontWeight: 600 }}>{g.totalWt.toFixed(1)} MT</div>
+                          </div>
+                          <div style={{ background: 'var(--bvp-surface2)', borderRadius: 8, padding: '8px 10px' }}>
+                            <div style={{ fontSize: 10, color: 'var(--bvp-text3)', textTransform: 'uppercase' }}>Total Revenue</div>
+                            <div style={{ fontSize: 16, fontWeight: 600 }}>₹{(g.totalAmt / 10000000).toFixed(2)} Cr</div>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--bvp-text3)' }}>{isSelected ? '▲ Click to collapse' : '▼ Click to see entries'}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Selected Session Entries */}
+                {batchManagerSess && selectedSessionEntries.length > 0 && (
+                  <div className="bvp-entries-wrap">
+                    <div className="bvp-entries-header">
+                      <h3>📋 Lot-wise Entries — Session: {batchManagerSess} ({selectedSessionEntries.length} entries)</h3>
+                      <button className="bvp-btn bvp-btn-ghost" style={{ fontSize: 11, color: '#c00' }} onClick={() => deleteSessionBatch(batchManagerSess)}>🗑️ Delete All ({batchManagerSess})</button>
+                    </div>
+                    <div className="bvp-tbl-wrap">
+                      <table className="bvp-table">
+                        <thead><tr><th>Date From</th><th>Date To</th><th>Type</th><th>Description</th><th>Total WT</th><th>Lot No.</th><th>Party</th><th>Amount ₹</th><th></th></tr></thead>
+                        <tbody>
+                          {selectedSessionEntries.map(r => (
+                            <tr key={r.id}>
+                              <td>{fmt(r.date_from)}</td><td>{fmt(r.date_to)}</td>
+                              <td><span className="bvp-badge bvp-badge-auction">{r.type}</span></td>
+                              <td style={{ maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.desc}>{r.desc}</td>
+                              <td>{r.wt_total ? r.wt_total + ' MT' : '-'}</td>
+                              <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{r.lot || '-'}</td>
+                              <td>{r.party}</td>
+                              <td>{r.amount ? '₹' + (r.amount / 100000).toFixed(1) + 'L' : '-'}</td>
+                              <td>
+                                <button className="bvp-btn bvp-btn-ghost" style={{ fontSize: 10, padding: '2px 6px', marginRight: 4 }} onClick={() => { setActiveView('scrap-entry'); setTimeout(() => startEditScrap(r), 100); }} title="Edit">✏️</button>
+                                <button className="bvp-del-btn" onClick={() => deleteEntry('scrap', r.id)}>×</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Lot-wise vs Summary Diff Modal — Portal to fix position:fixed in transformed parents */}
+
       {diffModal.open && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(2px)' }}>
           <div style={{ background: 'var(--bvp-surface)', width: '90%', maxWidth: 820, borderRadius: 14, padding: 24, boxShadow: '0 24px 50px rgba(0,0,0,0.25)', maxHeight: '88vh', overflowY: 'auto' }}>

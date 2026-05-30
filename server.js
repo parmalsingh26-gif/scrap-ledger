@@ -311,6 +311,124 @@ app.use('/api/bvpSurveyEntries', makeBvpApi(BvpSurveyEntry));
 app.use('/api/bvpMpEntries', makeBvpApi(BvpMpEntry));
 app.use('/api/bvpMonthlyManualEntries', makeBvpApi(BvpMonthlyManualEntry));
 
+// ========== BVP Batch Import (Replace by session) ==========
+app.post('/api/bvp/batch-import', async (req, res) => {
+  try {
+    const {
+      lot_wise_entries = [],
+      monthly_summary_entries = [],
+      replace_sessions = []   // sessions whose old data should be replaced
+    } = req.body;
+
+    let lotCount = 0, monthCount = 0;
+
+    // Replace logic: delete old entries for specified sessions
+    if (replace_sessions.length > 0) {
+      for (const sess of replace_sessions) {
+        // Only delete non-seed entries for lot-wise
+        await BvpScrapEntry.deleteMany({ session: sess, id: { $not: /^s_/ } });
+        await BvpMonthlyManualEntry.deleteMany({ session: sess });
+      }
+    }
+
+    // Bulk upsert lot-wise entries
+    if (lot_wise_entries.length > 0) {
+      const ops = lot_wise_entries.map(entry => ({
+        updateOne: {
+          filter: { id: entry.id },
+          update: { $set: { ...entry, updatedAt: Date.now() } },
+          upsert: true
+        }
+      }));
+      await BvpScrapEntry.bulkWrite(ops, { ordered: false });
+      lotCount = lot_wise_entries.length;
+    }
+
+    // Bulk upsert monthly summary entries
+    if (monthly_summary_entries.length > 0) {
+      const ops2 = monthly_summary_entries.map(entry => ({
+        updateOne: {
+          filter: { id: entry.id },
+          update: { $set: { ...entry, updatedAt: Date.now() } },
+          upsert: true
+        }
+      }));
+      await BvpMonthlyManualEntry.bulkWrite(ops2, { ordered: false });
+      monthCount = monthly_summary_entries.length;
+    }
+
+    res.json({ success: true, lotCount, monthCount });
+  } catch (err) {
+    console.error('Batch import error:', err);
+    res.status(500).json({ error: 'Batch import failed', details: String(err) });
+  }
+});
+
+// ========== BVP Delete by Session (Batch Delete) ==========
+app.delete('/api/bvp/session/:session', async (req, res) => {
+  try {
+    const sess = req.params.session;
+    // Delete non-seed entries only
+    const scrapResult = await BvpScrapEntry.deleteMany({ session: sess, id: { $not: /^s_/ } });
+    const monthResult = await BvpMonthlyManualEntry.deleteMany({ session: sess });
+    res.json({ success: true, scrapDeleted: scrapResult.deletedCount, monthDeleted: monthResult.deletedCount });
+  } catch (err) {
+    console.error('Session delete error:', err);
+    res.status(500).json({ error: 'Failed to delete session data', details: String(err) });
+  }
+});
+
+// ========== BVP Update (PUT) for Scrap Entry ==========
+app.put('/api/bvpScrapEntries/:id', async (req, res) => {
+  try {
+    const record = await BvpScrapEntry.findOneAndUpdate(
+      { id: req.params.id },
+      { $set: { ...req.body, updatedAt: Date.now() } },
+      { new: true }
+    );
+    if (!record) return res.status(404).json({ error: 'Entry not found' });
+    const ret = record.toObject();
+    delete ret._id; delete ret.__v;
+    res.json(ret);
+  } catch (err) {
+    console.error('Scrap entry update error:', err);
+    res.status(500).json({ error: 'Failed to update entry' });
+  }
+});
+
+// ========== BVP Scrap Entry Batch Metadata (for batch manager) ==========
+app.get('/api/bvp/batches', async (req, res) => {
+  try {
+    // Group scrap entries by session + batch_tag
+    const pipeline = [
+      { $match: { id: { $not: /^s_/ } } }, // exclude seed entries
+      {
+        $group: {
+          _id: { session: '$session', batch_tag: { $ifNull: ['$batch_tag', '$session'] } },
+          count: { $sum: 1 },
+          totalWt: { $sum: { $ifNull: ['$wt_total', 0] } },
+          totalAmt: { $sum: { $ifNull: ['$amount', 0] } },
+          uploadedAt: { $max: '$updatedAt' }
+        }
+      },
+      { $sort: { '_id.session': -1, 'uploadedAt': -1 } }
+    ];
+    const batches = await BvpScrapEntry.aggregate(pipeline);
+
+    // Also get monthly summary entries grouped by session
+    const monthPipeline = [
+      { $group: { _id: '$session', count: { $sum: 1 }, uploadedAt: { $max: '$updatedAt' } } },
+      { $sort: { '_id': -1 } }
+    ];
+    const monthBatches = await BvpMonthlyManualEntry.aggregate(monthPipeline);
+
+    res.json({ scrapBatches: batches, monthBatches });
+  } catch (err) {
+    console.error('Batches fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch batches' });
+  }
+});
+
 // BVP Seed Data Endpoint
 app.post('/api/bvp/init', async (req, res) => {
   const scrapCount = await BvpScrapEntry.countDocuments();

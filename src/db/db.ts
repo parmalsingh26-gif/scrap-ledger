@@ -343,6 +343,7 @@ export const db = {
     toArray: (): Promise<BvpScrapEntry[]> => apiFetch('/bvpScrapEntries'),
     add: (data: any): Promise<BvpScrapEntry> => apiFetch('/bvpScrapEntries', { method: 'POST', body: JSON.stringify(data) }),
     put: (data: any): Promise<BvpScrapEntry> => apiFetch('/bvpScrapEntries', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: any): Promise<BvpScrapEntry> => apiFetch(`/bvpScrapEntries/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch(`/bvpScrapEntries/${id}`, { method: 'DELETE' }),
   },
   bvpCoachEntries: {
@@ -367,6 +368,14 @@ export const db = {
     put: (data: any) => apiFetch(`/bvpMonthlyManualEntries`, { method: 'POST', body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch(`/bvpMonthlyManualEntries/${id}`, { method: 'DELETE' }),
   },
+  // ========== Batch Import & Management ==========
+  bvpBatchImport: (data: {
+    lot_wise_entries: any[];
+    monthly_summary_entries: any[];
+    replace_sessions: string[];
+  }) => apiFetch('/bvp/batch-import', { method: 'POST', body: JSON.stringify(data) }),
+  bvpDeleteSession: (session: string) => apiFetch(`/bvp/session/${encodeURIComponent(session)}`, { method: 'DELETE' }),
+  bvpGetBatches: () => apiFetch('/bvp/batches'),
   bvpInit: () => apiFetch('/bvp/init', { method: 'POST', body: JSON.stringify({}) }),
   transaction: async (mode: string, tables: any[], fn: () => Promise<void>) => {
     // Just run the function, ignore Dexie transactions
