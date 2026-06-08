@@ -19,6 +19,8 @@ export function OutwardEntry() {
   const [firmInput, setFirmInput] = useState<string>('');
   const [showFirmDropdown, setShowFirmDropdown] = useState(false);
   const [weightPerNos, setWeightPerNos] = useState<string>('');
+  const [rcCount, setRcCount] = useState<string>('');
+  const [fcCount, setFcCount] = useState<string>('');
 
   const today = new Date().toISOString().split('T')[0];
   const [dateLotApplied, setDateLotApplied] = useState<string>('');
@@ -43,6 +45,7 @@ export function OutwardEntry() {
   }, [unitId, units]);
 
   const isNosUnit = selectedUnitName === 'Nos';
+  const isCoverItem = (selectedItem?.name || '').toLowerCase().includes('cover');
 
   const calcWeightMT = () => {
     if (!isNosUnit || !quantity || !weightPerNos) return null;
@@ -114,6 +117,10 @@ export function OutwardEntry() {
       if (isNosUnit && weightPerNos) {
         entryData.weightPerNos = Number(weightPerNos);
       }
+      if (isCoverItem) {
+        if (rcCount) entryData.rcCount = Number(rcCount);
+        if (fcCount) entryData.fcCount = Number(fcCount);
+      }
 
       await db.outwardEntries.add(entryData);
 
@@ -127,6 +134,8 @@ export function OutwardEntry() {
       setFirmName('');
       setFirmInput('');
       setWeightPerNos('');
+      setRcCount('');
+      setFcCount('');
       setDateLotApplied('');
       setDateSold(today);
       setDateDelivered(today);
@@ -377,6 +386,56 @@ export function OutwardEntry() {
                 </div>
               )}
             </div>
+
+            {/* RC / FC Cover Breakdown — only for cover items */}
+            {isCoverItem && (
+              <div className="p-5 bg-gradient-to-br from-blue-50 to-purple-50 border border-indigo-200 rounded-xl">
+                <h4 className="text-xs font-bold text-indigo-700 mb-4 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px]">layers</span>
+                  Cover Breakdown — RC &amp; FC
+                  <span className="text-indigo-400 font-normal ml-1">(kitne gaye)</span>
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="relative pt-2">
+                    <input
+                      type="number" min="0"
+                      className="glass-input floating-input w-full rounded-xl py-3 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent border-blue-300"
+                      value={rcCount}
+                      onChange={(e) => setRcCount(e.target.value)}
+                      placeholder="RC Count"
+                      id="outward-rc"
+                    />
+                    <label htmlFor="outward-rc" className="floating-label absolute left-4 top-5 font-body-md text-body-md text-blue-600 transition-all duration-200 pointer-events-none">
+                      🔵 Rear Cover (RC) — Nos
+                    </label>
+                  </div>
+                  <div className="relative pt-2">
+                    <input
+                      type="number" min="0"
+                      className="glass-input floating-input w-full rounded-xl py-3 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent border-purple-300"
+                      value={fcCount}
+                      onChange={(e) => setFcCount(e.target.value)}
+                      placeholder="FC Count"
+                      id="outward-fc"
+                    />
+                    <label htmlFor="outward-fc" className="floating-label absolute left-4 top-5 font-body-md text-body-md text-purple-600 transition-all duration-200 pointer-events-none">
+                      🟣 Front Cover (FC) — Nos
+                    </label>
+                  </div>
+                </div>
+                {(rcCount || fcCount) && (
+                  <div className="mt-3 flex items-center gap-3 flex-wrap">
+                    {rcCount && <span className="px-2.5 py-1 rounded-lg bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold">RC: {rcCount} Nos</span>}
+                    {fcCount && <span className="px-2.5 py-1 rounded-lg bg-purple-100 border border-purple-200 text-purple-700 text-xs font-bold">FC: {fcCount} Nos</span>}
+                    {rcCount && fcCount && (
+                      <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">
+                        = {Number(rcCount) + Number(fcCount)} Total
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Section 3: Timelines */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">

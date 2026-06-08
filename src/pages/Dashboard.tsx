@@ -505,6 +505,13 @@ export function Dashboard() {
                   outTotals[u] = (outTotals[u] || 0) + e.quantity;
                 });
 
+                // RC/FC breakdown for cover items
+                const isCoverItem = item.name.toLowerCase().includes('cover');
+                const inRC = isCoverItem ? itemInwards.reduce((s, e) => s + ((e as any).rcCount || 0), 0) : 0;
+                const inFC = isCoverItem ? itemInwards.reduce((s, e) => s + ((e as any).fcCount || 0), 0) : 0;
+                const outRC = isCoverItem ? itemOutwards.reduce((s, e) => s + ((e as any).rcCount || 0), 0) : 0;
+                const outFC = isCoverItem ? itemOutwards.reduce((s, e) => s + ((e as any).fcCount || 0), 0) : 0;
+
                 // Auto balance: inward - outward, only for matching units
                 const itemAutoBalances = calcAutoBalance(itemInwards, itemOutwards);
 
@@ -534,6 +541,14 @@ export function Dashboard() {
                               <span className="text-tertiary text-xs flex items-center"><span className="material-symbols-outlined text-[12px] mr-0.5">arrow_downward</span> IN</span>
                             </div>
                           ))}
+                          {/* RC/FC breakdown for cover items */}
+                          {isCoverItem && (inRC > 0 || inFC > 0) && (
+                            <div className="mt-1 p-1.5 bg-blue-50 border border-blue-100 rounded-lg text-[11px]">
+                              {inRC > 0 && <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span><span className="text-blue-700 font-semibold">RC: {inRC} Nos</span></div>}
+                              {inFC > 0 && <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500 inline-block"></span><span className="text-purple-700 font-semibold">FC: {inFC} Nos</span></div>}
+                              {inRC > 0 && inFC > 0 && <div className="text-gray-500 font-medium border-t border-blue-100 pt-0.5 mt-0.5">Total: {inRC + inFC} Nos</div>}
+                            </div>
+                          )}
                         </div>
                       }
                     </td>
@@ -546,6 +561,14 @@ export function Dashboard() {
                               <span className="text-secondary text-xs flex items-center"><span className="material-symbols-outlined text-[12px] mr-0.5">arrow_upward</span> OUT</span>
                             </div>
                           ))}
+                          {/* RC/FC breakdown for cover items outward */}
+                          {isCoverItem && (outRC > 0 || outFC > 0) && (
+                            <div className="mt-1 p-1.5 bg-orange-50 border border-orange-100 rounded-lg text-[11px]">
+                              {outRC > 0 && <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span><span className="text-blue-700 font-semibold">RC: {outRC} Nos</span></div>}
+                              {outFC > 0 && <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500 inline-block"></span><span className="text-purple-700 font-semibold">FC: {outFC} Nos</span></div>}
+                              {outRC > 0 && outFC > 0 && <div className="text-gray-500 font-medium border-t border-orange-100 pt-0.5 mt-0.5">Total: {outRC + outFC} Nos</div>}
+                            </div>
+                          )}
                         </div>
                       }
                     </td>
@@ -692,84 +715,123 @@ export function Dashboard() {
                 const timeline = getHistory(historyItem.id!);
                 if (timeline.length === 0) return <div className="text-center text-outline py-8 font-body-sm text-body-sm">No records found.</div>;
 
+                // RC/FC totals for cover items
+                const isCoverHistory = historyItem.name.toLowerCase().includes('cover');
+                const allInwards = timeline.filter(e => e._type === 'INWARD');
+                const allOutwards = timeline.filter(e => e._type === 'OUTWARD');
+                const totalInRC = allInwards.reduce((s, e) => s + ((e as any).rcCount || 0), 0);
+                const totalInFC = allInwards.reduce((s, e) => s + ((e as any).fcCount || 0), 0);
+                const totalOutRC = allOutwards.reduce((s, e) => s + ((e as any).rcCount || 0), 0);
+                const totalOutFC = allOutwards.reduce((s, e) => s + ((e as any).fcCount || 0), 0);
+                const balRC = totalInRC - totalOutRC;
+                const balFC = totalInFC - totalOutFC;
+
                 return (
-                  <div className="relative pl-4 space-y-8 before:absolute before:inset-y-0 before:left-[23px] before:w-px before:bg-outline-variant/40">
-                    {timeline.map((entry, idx) => {
-                      const isIdxOutward = entry._type === 'OUTWARD';
-                      const u = unitMap.get(entry.unitId) || '';
-                      return (
-                        <div key={idx} className="relative pl-8">
-                          <div className={cn("absolute left-[-5px] top-1 w-3 h-3 rounded-full ring-4 ring-white z-10", isIdxOutward ? 'bg-secondary' : 'bg-tertiary')}></div>
-                          <div className="flex justify-between items-start mb-1">
-                            <span className={cn("font-label-md text-label-md font-bold", isIdxOutward ? 'text-secondary' : 'text-tertiary')}>{entry._type}</span>
-                            <span className="font-body-sm text-body-sm text-outline text-[12px]">
-                               {isIdxOutward
-                                 ? format(new Date((entry as any).dateDelivered), 'MMM d, HH:mm')
-                                 : format(new Date((entry as any).date), 'MMM d, HH:mm')
-                               }
-                            </span>
+                  <div className="space-y-4">
+                    {/* RC/FC Summary Banner for cover items */}
+                    {isCoverHistory && (totalInRC > 0 || totalInFC > 0) && (
+                      <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-purple-50 p-4">
+                        <h4 className="text-xs font-bold text-indigo-700 mb-3 flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[14px]">summarize</span>
+                          RC / FC Breakdown Summary
+                        </h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          {/* INWARD */}
+                          <div className="bg-white rounded-lg p-2.5 border border-blue-100 shadow-sm">
+                            <p className="text-[10px] text-gray-400 font-medium uppercase mb-1.5">Total Inward</p>
+                            {totalInRC > 0 && <div className="flex items-center gap-1 mb-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span><span className="text-xs font-bold text-blue-700">RC: {totalInRC} Nos</span></div>}
+                            {totalInFC > 0 && <div className="flex items-center gap-1 mb-1"><span className="w-2 h-2 rounded-full bg-purple-500"></span><span className="text-xs font-bold text-purple-700">FC: {totalInFC} Nos</span></div>}
+                            <div className="text-[11px] font-bold text-gray-600 border-t border-gray-100 pt-1 mt-1">Total: {totalInRC + totalInFC} Nos</div>
                           </div>
-                          <div className="bg-surface rounded-lg p-3 border border-outline-variant/20 mt-2 shadow-sm hover:shadow transition-shadow">
-                            <div className="flex justify-between items-center">
-                              <span className="font-data-mono text-data-mono font-medium">{isIdxOutward ? '-' : '+'}{entry.quantity} {u}</span>
-                              <span className="text-xs text-outline font-medium bg-white px-2 py-1 rounded border border-outline-variant/10">{(entry as any).lotNumber || 'No Lot'}</span>
-                            </div>
-
-                            <div className="mt-2 text-xs text-on-surface-variant space-y-1">
-                               {isIdxOutward ? (
-                                 <>
-                                   {(entry as any).firmName && <p><span className="text-outline">Buyer:</span> <span className="font-medium">{(entry as any).firmName}</span></p>}
-                                   {(entry as any).dateSold && <p><span className="text-outline">Date Sold:</span> <span className="font-medium">{(entry as any).dateSold}</span></p>}
-                                   <p className="flex items-center gap-1">
-                                     <span className="text-outline">Lot Applied:</span>{' '}
-                                     {(entry as any).dateLotApplied
-                                       ? <span className="font-medium">{(entry as any).dateLotApplied}</span>
-                                       : <span className="text-amber-500 font-semibold bg-amber-50 px-1.5 py-0.5 rounded text-[10px] border border-amber-200">Pending</span>}
-                                   </p>
-                                   {(entry as any).weightPerNos && <p><span className="text-outline">Wt/Nos:</span> <span className="font-medium">{(entry as any).weightPerNos} Kg</span></p>}
-                                 </>
-                               ) : (
-                                 <>
-                                   {(entry as any).machineType && (
-                                     <p><span className="text-outline">Machine Type:</span> <span className="font-medium">{(entry as any).machineType}</span></p>
-                                   )}
-                                   {(entry as any).coverType && (
-                                     <p><span className="text-outline">Cover Type:</span> <span className="font-medium">{(entry as any).coverType}</span></p>
-                                   )}
-                                   {/* Show RC and FC counts separately when both present */}
-                                   {((entry as any).rcCount !== undefined && (entry as any).rcCount !== null && (entry as any).rcCount !== '') && (
-                                     <p>
-                                       <span className="text-outline">Rear Cover (RC):</span>{' '}
-                                       <span className="font-semibold text-blue-700">{(entry as any).rcCount} Nos</span>
-                                     </p>
-                                   )}
-                                   {((entry as any).fcCount !== undefined && (entry as any).fcCount !== null && (entry as any).fcCount !== '') && (
-                                     <p>
-                                       <span className="text-outline">Front Cover (FC):</span>{' '}
-                                       <span className="font-semibold text-purple-700">{(entry as any).fcCount} Nos</span>
-                                     </p>
-                                   )}
-                                   {(entry as any).weightPerNos && (
-                                     <p><span className="text-outline">Wt/Nos:</span> <span className="font-medium">{(entry as any).weightPerNos} Kg</span></p>
-                                   )}
-                                 </>
-                               )}
-                            </div>
-
-                            {isAdmin && (
-                                <div className="mt-3 pt-2 border-t border-outline-variant/20 flex justify-end space-x-3">
-                                  <button onClick={() => isIdxOutward ? setEditingOutwardEntry(entry as OutwardEntry) : setEditingEntry(entry as InwardEntry)} className="text-primary hover:text-primary-container flex items-center text-xs font-label-md transition-colors">
-                                    <span className="material-symbols-outlined text-[16px] mr-1">edit</span> Edit
-                                  </button>
-                                  <button onClick={() => isIdxOutward ? handleDeleteOutwardEntry((entry as any).id) : handleDeleteEntry((entry as any).id)} className="text-error flex items-center hover:text-error-container text-xs font-label-md transition-colors">
-                                    <span className="material-symbols-outlined text-[16px] mr-1">delete</span> Delete
-                                  </button>
-                                </div>
-                            )}
+                          {/* OUTWARD */}
+                          <div className="bg-white rounded-lg p-2.5 border border-orange-100 shadow-sm">
+                            <p className="text-[10px] text-gray-400 font-medium uppercase mb-1.5">Total Outward</p>
+                            {totalOutRC > 0 && <div className="flex items-center gap-1 mb-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span><span className="text-xs font-bold text-blue-700">RC: {totalOutRC} Nos</span></div>}
+                            {totalOutFC > 0 && <div className="flex items-center gap-1 mb-1"><span className="w-2 h-2 rounded-full bg-purple-500"></span><span className="text-xs font-bold text-purple-700">FC: {totalOutFC} Nos</span></div>}
+                            <div className="text-[11px] font-bold text-gray-600 border-t border-gray-100 pt-1 mt-1">Total: {totalOutRC + totalOutFC} Nos</div>
+                          </div>
+                          {/* BALANCE */}
+                          <div className="bg-white rounded-lg p-2.5 border border-emerald-100 shadow-sm">
+                            <p className="text-[10px] text-gray-400 font-medium uppercase mb-1.5">Balance Left</p>
+                            <div className="flex items-center gap-1 mb-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span><span className={`text-xs font-bold ${balRC >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>RC: {balRC} Nos</span></div>
+                            <div className="flex items-center gap-1 mb-1"><span className="w-2 h-2 rounded-full bg-purple-500"></span><span className={`text-xs font-bold ${balFC >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>FC: {balFC} Nos</span></div>
+                            <div className={`text-[11px] font-bold border-t border-gray-100 pt-1 mt-1 ${(balRC + balFC) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>Total: {balRC + balFC} Nos</div>
                           </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
+
+                    <div className="relative pl-4 space-y-8 before:absolute before:inset-y-0 before:left-[23px] before:w-px before:bg-outline-variant/40">
+                      {timeline.map((entry, idx) => {
+                        const isIdxOutward = entry._type === 'OUTWARD';
+                        const u = unitMap.get(entry.unitId) || '';
+                        const entryRC = (entry as any).rcCount;
+                        const entryFC = (entry as any).fcCount;
+                        const hasRCFC = isCoverHistory && (entryRC || entryFC);
+                        return (
+                          <div key={idx} className="relative pl-8">
+                            <div className={cn("absolute left-[-5px] top-1 w-3 h-3 rounded-full ring-4 ring-white z-10", isIdxOutward ? 'bg-secondary' : 'bg-tertiary')}></div>
+                            <div className="flex justify-between items-start mb-1">
+                              <span className={cn("font-label-md text-label-md font-bold", isIdxOutward ? 'text-secondary' : 'text-tertiary')}>{entry._type}</span>
+                              <span className="font-body-sm text-body-sm text-outline text-[12px]">
+                                 {isIdxOutward
+                                   ? format(new Date((entry as any).dateDelivered), 'MMM d, HH:mm')
+                                   : format(new Date((entry as any).date), 'MMM d, HH:mm')
+                                 }
+                              </span>
+                            </div>
+                            <div className="bg-surface rounded-lg p-3 border border-outline-variant/20 mt-2 shadow-sm hover:shadow transition-shadow">
+                              <div className="flex justify-between items-center">
+                                <span className="font-data-mono text-data-mono font-medium">{isIdxOutward ? '-' : '+'}{entry.quantity} {u}</span>
+                                <span className="text-xs text-outline font-medium bg-white px-2 py-1 rounded border border-outline-variant/10">{(entry as any).lotNumber || 'No Lot'}</span>
+                              </div>
+
+                              {/* RC/FC inline badge for this entry */}
+                              {hasRCFC && (
+                                <div className="mt-2 flex gap-2 flex-wrap">
+                                  {entryRC ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold border border-blue-200"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>RC: {entryRC} Nos</span> : null}
+                                  {entryFC ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 text-[11px] font-bold border border-purple-200"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>FC: {entryFC} Nos</span> : null}
+                                  {entryRC && entryFC ? <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[11px] font-semibold border border-gray-200">= {entryRC + entryFC} Total</span> : null}
+                                </div>
+                              )}
+
+                              <div className="mt-2 text-xs text-on-surface-variant space-y-1">
+                                 {isIdxOutward ? (
+                                   <>
+                                     {(entry as any).firmName && <p><span className="text-outline">Buyer:</span> <span className="font-medium">{(entry as any).firmName}</span></p>}
+                                     {(entry as any).dateSold && <p><span className="text-outline">Date Sold:</span> <span className="font-medium">{(entry as any).dateSold}</span></p>}
+                                     <p className="flex items-center gap-1">
+                                       <span className="text-outline">Lot Applied:</span>{' '}
+                                       {(entry as any).dateLotApplied
+                                         ? <span className="font-medium">{(entry as any).dateLotApplied}</span>
+                                         : <span className="text-amber-500 font-semibold bg-amber-50 px-1.5 py-0.5 rounded text-[10px] border border-amber-200">Pending</span>}
+                                     </p>
+                                     {(entry as any).weightPerNos && <p><span className="text-outline">Wt/Nos:</span> <span className="font-medium">{(entry as any).weightPerNos} Kg</span></p>}
+                                   </>
+                                 ) : (
+                                   <>
+                                     {(entry as any).machineType && (
+                                       <p><span className="text-outline">Machine Type:</span> <span className="font-medium">{(entry as any).machineType}</span></p>
+                                     )}
+                                   </>
+                                 )}
+                              </div>
+
+                              {isAdmin && (
+                                  <div className="mt-3 pt-2 border-t border-outline-variant/20 flex justify-end space-x-3">
+                                    <button onClick={() => isIdxOutward ? setEditingOutwardEntry(entry as OutwardEntry) : setEditingEntry(entry as InwardEntry)} className="text-primary hover:text-primary-container flex items-center text-xs font-label-md transition-colors">
+                                      <span className="material-symbols-outlined text-[16px] mr-1">edit</span> Edit
+                                    </button>
+                                    <button onClick={() => isIdxOutward ? handleDeleteOutwardEntry((entry as any).id) : handleDeleteEntry((entry as any).id)} className="text-error flex items-center hover:text-error-container text-xs font-label-md transition-colors">
+                                      <span className="material-symbols-outlined text-[16px] mr-1">delete</span> Delete
+                                    </button>
+                                  </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })()}

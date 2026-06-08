@@ -43,6 +43,9 @@ export interface InwardEntry {
   rcCount?: number;
   fcCount?: number;
   weightPerNos?: number;
+  valueMode?: 'weight' | 'nos' | 'volume' | 'manual';
+  rate?: number;
+  totalValue?: number;
 }
 
 export interface OutwardEntry {
@@ -57,6 +60,8 @@ export interface OutwardEntry {
   dateSold: string;
   dateDelivered: string;
   weightPerNos?: number;
+  rcCount?: number;
+  fcCount?: number;
 }
 
 export interface InventoryBalance {

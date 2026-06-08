@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { db, useLiveQuery, type InwardEntry, type Item } from '../db/db';
 import { CategoryBadge } from './CategoryBadge';
@@ -25,6 +25,12 @@ export function EditInwardModal({
   const [coverType, setCoverType] = useState<'RC' | 'FC' | ''>(entry.coverType || '');
   const [rcCount, setRcCount] = useState<string>(entry.rcCount ? String(entry.rcCount) : '');
   const [fcCount, setFcCount] = useState<string>(entry.fcCount ? String(entry.fcCount) : '');
+  const [weightPerNos, setWeightPerNos] = useState<string>(entry.weightPerNos ? String(entry.weightPerNos) : '');
+
+  // Value fields
+  const [valueMode, setValueMode] = useState<string>(entry.valueMode || 'weight');
+  const [rate, setRate] = useState<string>(entry.rate ? String(entry.rate) : '');
+  const [manualTotalValue, setManualTotalValue] = useState<string>(entry.totalValue ? String(entry.totalValue) : '');
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -32,6 +38,29 @@ export function EditInwardModal({
     if (!item || !categories) return null;
     return categories.find(c => c.id === item.categoryId) || null;
   }, [item, categories]);
+
+  const selectedUnitName = useMemo(() => {
+    if (!unitId || !units) return '';
+    return units.find(u => u.id === Number(unitId))?.name || '';
+  }, [unitId, units]);
+
+  const isNosUnit = selectedUnitName === 'Nos';
+  const isVolumeUnit = ['LTR', 'KL', 'L'].includes(selectedUnitName.toUpperCase());
+  const isWeightUnit = ['MT', 'Kg', 'KG'].includes(selectedUnitName);
+
+  const calculatedValue = useMemo(() => {
+    const qty = Number(quantity);
+    const r = Number(rate);
+    if (!qty || !r || valueMode === 'manual') return null;
+    return qty * r;
+  }, [quantity, rate, valueMode]);
+
+  const totalValue = valueMode === 'manual' ? Number(manualTotalValue) || 0 : (calculatedValue || 0);
+
+  const calcWeightMT = () => {
+    if (!isNosUnit || !quantity || !weightPerNos) return null;
+    return ((Number(quantity) * Number(weightPerNos)) / 1000).toFixed(3);
+  };
 
   const itemName = item?.name?.toLowerCase() || '';
   const isBearingOrCover = itemName.includes('bearing') || itemName.includes('cover');
@@ -52,6 +81,10 @@ export function EditInwardModal({
         coverType: coverType ? coverType as 'RC' | 'FC' : undefined,
         rcCount: rcCount ? Number(rcCount) : undefined,
         fcCount: fcCount ? Number(fcCount) : undefined,
+        weightPerNos: weightPerNos ? Number(weightPerNos) : undefined,
+        valueMode: valueMode as any,
+        rate: rate ? Number(rate) : undefined,
+        totalValue: totalValue || undefined,
       });
       onClose();
     } catch (err) {
@@ -145,6 +178,98 @@ export function EditInwardModal({
                   <label className="absolute left-4 -top-0.5 bg-surface/80 px-1 font-body-sm text-body-sm text-primary transition-all duration-200 pointer-events-none scale-85">
                     Unit <span className="text-error">*</span>
                   </label>
+                </div>
+              </div>
+
+              {/* Weight per NOS — shows when unit = Nos */}
+              {isNosUnit && (
+                <div className="col-span-1 md:col-span-2 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                  <h4 className="text-xs font-semibold text-amber-700 mb-3 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px]">calculate</span>
+                    NOS Weight Calculator
+                  </h4>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex-1 min-w-[160px] relative pt-2">
+                      <input
+                        type="number" step="0.001" min="0"
+                        className="glass-input floating-input w-full rounded-xl py-2.5 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent border-amber-300"
+                        value={weightPerNos}
+                        onChange={(e) => setWeightPerNos(e.target.value)}
+                        placeholder="Weight per 1 NOS"
+                        id="edit-wt-nos"
+                      />
+                      <label htmlFor="edit-wt-nos" className="floating-label absolute left-4 top-4 font-body-sm text-body-sm text-amber-600 transition-all duration-200 pointer-events-none">
+                        Weight per 1 NOS (Kg)
+                      </label>
+                    </div>
+                    {calcWeightMT() && (
+                      <div className="flex items-center gap-2 bg-white border border-emerald-300 rounded-lg px-4 py-2">
+                        <span className="material-symbols-outlined text-emerald-600 text-[18px]">scale</span>
+                        <span className="text-sm font-bold text-emerald-700">≈ {calcWeightMT()} MT</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Value Section */}
+              <div className="col-span-1 md:col-span-2 p-4 bg-indigo-50/70 border border-indigo-200/60 rounded-xl">
+                <h4 className="text-xs font-semibold text-indigo-700 mb-3 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px]">currency_rupee</span>
+                  Value Details
+                </h4>
+                <div className="flex gap-2 flex-wrap mb-3">
+                  {['weight', 'nos', 'volume', 'manual'].map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setValueMode(mode)}
+                      className={`px-3 py-1 rounded-lg text-xs font-medium border transition-all ${
+                        valueMode === mode
+                          ? 'bg-indigo-100 border-indigo-400 text-indigo-800 shadow-sm'
+                          : 'bg-white/70 border-gray-200 text-gray-500 hover:border-gray-400'
+                      }`}
+                    >
+                      {mode === 'weight' ? '⚖️ Weight' : mode === 'nos' ? '🔢 Nos' : mode === 'volume' ? '💧 Volume' : '✏️ Manual'}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {valueMode !== 'manual' ? (
+                    <div className="relative pt-2">
+                      <input
+                        type="number" step="0.01" min="0"
+                        className="glass-input floating-input w-full rounded-xl py-2.5 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent border-indigo-300"
+                        value={rate}
+                        onChange={(e) => setRate(e.target.value)}
+                        placeholder="Rate"
+                        id="edit-rate"
+                      />
+                      <label htmlFor="edit-rate" className="floating-label absolute left-4 top-4 font-body-sm text-body-sm text-indigo-600 transition-all duration-200 pointer-events-none">
+                        Rate per {valueMode === 'nos' ? 'Nos' : selectedUnitName || 'unit'} (₹)
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="relative pt-2">
+                      <input
+                        type="number" step="0.01" min="0"
+                        className="glass-input floating-input w-full rounded-xl py-2.5 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent border-indigo-300"
+                        value={manualTotalValue}
+                        onChange={(e) => setManualTotalValue(e.target.value)}
+                        placeholder="Total Value"
+                        id="edit-manual-value"
+                      />
+                      <label htmlFor="edit-manual-value" className="floating-label absolute left-4 top-4 font-body-sm text-body-sm text-indigo-600 transition-all duration-200 pointer-events-none">
+                        Total Value (₹)
+                      </label>
+                    </div>
+                  )}
+                  {totalValue > 0 && (
+                    <div className="flex items-center gap-2 bg-white border border-emerald-300 rounded-lg px-4 py-2">
+                      <span className="material-symbols-outlined text-emerald-600 text-[18px]">payments</span>
+                      <span className="text-sm font-bold text-emerald-700">₹ {totalValue.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -656,60 +656,7 @@ export function TotalScrapPosition() {
 
       {/* ── PENDING TAB ── */}
       {activeTab === 'pending' && (
-        <div className="space-y-4">
-          <div className="glass-panel rounded-xl overflow-hidden shadow-sm">
-            <div className="px-6 py-4 border-b border-outline-variant/20 flex items-center gap-3 bg-amber-50">
-              <span className="material-symbols-outlined text-amber-600" style={{ fontVariationSettings: "'FILL' 1" }}>warning</span>
-              <div>
-                <h3 className="font-semibold text-gray-900">Pending Data Audit</h3>
-                <p className="text-xs text-amber-600 mt-0.5">{pendingEntries.length} entries need attention</p>
-              </div>
-            </div>
-            {pendingEntries.length === 0 ? (
-              <div className="p-12 text-center">
-                <span className="material-symbols-outlined text-emerald-500 text-[48px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-                <p className="text-gray-600 mt-3 font-medium">All entries are complete!</p>
-                <p className="text-sm text-gray-400 mt-1">No missing data found.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-outline-variant/20 bg-surface-variant/30">
-                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Entry ID</th>
-                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Type</th>
-                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Material</th>
-                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Date</th>
-                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Missing Data</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingEntries.map((p, i) => (
-                      <tr key={i} className="border-b border-outline-variant/10 hover:bg-amber-50/50 transition-colors">
-                        <td className="px-6 py-3 font-mono text-xs text-gray-500">#{p.id}</td>
-                        <td className="px-6 py-3">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            p.type === 'OUTWARD' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
-                          }`}>
-                            {p.type}
-                          </span>
-                        </td>
-                        <td className="px-6 py-3 text-sm font-medium text-gray-900">{p.itemName}</td>
-                        <td className="px-6 py-3 text-sm text-gray-600">{p.date || '—'}</td>
-                        <td className="px-6 py-3">
-                          <span className="flex items-center gap-1 text-amber-700 text-xs font-medium">
-                            <span className="material-symbols-outlined text-[14px]">error_outline</span>
-                            {p.reason}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
+        <PendingTabContent pendingEntries={pendingEntries} />
       )}
 
       {/* ── CONVERTER TAB ── */}
@@ -743,6 +690,181 @@ export function TotalScrapPosition() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── PendingTabContent with "Fix Now" Inline Editor ──────────────────────────
+function PendingTabContent({ pendingEntries }: { pendingEntries: Array<{ id: number; type: 'INWARD' | 'OUTWARD'; itemName: string; reason: string; date: string; }> }) {
+  const [editingId, setEditingId] = useState<string | null>(null); // "INWARD-5" or "OUTWARD-3-date"
+  const [editValue, setEditValue] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+
+  const getEditKey = (p: typeof pendingEntries[0]) => `${p.type}-${p.id}-${p.reason}`;
+
+  const handleFixNow = (p: typeof pendingEntries[0]) => {
+    setEditingId(getEditKey(p));
+    setEditValue('');
+    setSavedMsg(null);
+  };
+
+  const handleSave = async (p: typeof pendingEntries[0]) => {
+    if (!editValue) return;
+    setSaving(true);
+    try {
+      if (p.reason.includes('Weight per NOS')) {
+        const weightVal = Number(editValue);
+        if (!weightVal || weightVal <= 0) { alert('Please enter a valid weight'); setSaving(false); return; }
+        if (p.type === 'INWARD') {
+          await db.inwardEntries.update(p.id, { weightPerNos: weightVal });
+        } else {
+          await db.outwardEntries.update(p.id, { weightPerNos: weightVal });
+        }
+      } else if (p.reason.includes('Date of Lot Applied')) {
+        if (!editValue) { alert('Please select a date'); setSaving(false); return; }
+        await db.outwardEntries.update(p.id, { dateLotApplied: editValue });
+      }
+      setSavedMsg(`✅ Entry #${p.id} updated!`);
+      setEditingId(null);
+      setEditValue('');
+      setTimeout(() => setSavedMsg(null), 2500);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to update');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditingId(null);
+    setEditValue('');
+  };
+
+  return (
+    <div className="space-y-4">
+      {savedMsg && (
+        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium flex items-center gap-2 animate-fade-in">
+          <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+          {savedMsg}
+        </div>
+      )}
+
+      <div className="glass-panel rounded-xl overflow-hidden shadow-sm">
+        <div className="px-6 py-4 border-b border-outline-variant/20 flex items-center gap-3 bg-amber-50">
+          <span className="material-symbols-outlined text-amber-600" style={{ fontVariationSettings: "'FILL' 1" }}>warning</span>
+          <div>
+            <h3 className="font-semibold text-gray-900">Pending Data Audit</h3>
+            <p className="text-xs text-amber-600 mt-0.5">{pendingEntries.length} entries need attention — click "Fix Now" to update directly</p>
+          </div>
+        </div>
+        {pendingEntries.length === 0 ? (
+          <div className="p-12 text-center">
+            <span className="material-symbols-outlined text-emerald-500 text-[48px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+            <p className="text-gray-600 mt-3 font-medium">All entries are complete!</p>
+            <p className="text-sm text-gray-400 mt-1">No missing data found.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-outline-variant/20 bg-surface-variant/30">
+                  <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">ID</th>
+                  <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Type</th>
+                  <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Material</th>
+                  <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Date</th>
+                  <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Missing Data</th>
+                  <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingEntries.map((p, i) => {
+                  const key = getEditKey(p);
+                  const isEditing = editingId === key;
+                  const isWeightFix = p.reason.includes('Weight per NOS');
+                  const isDateFix = p.reason.includes('Date of Lot Applied');
+
+                  return (
+                    <tr key={i} className={`border-b border-outline-variant/10 transition-colors ${isEditing ? 'bg-amber-50/80 ring-1 ring-amber-200 ring-inset' : 'hover:bg-amber-50/40'}`}>
+                      <td className="px-5 py-3 font-mono text-xs text-gray-500">#{p.id}</td>
+                      <td className="px-5 py-3">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          p.type === 'OUTWARD' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {p.type}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-sm font-medium text-gray-900">{p.itemName}</td>
+                      <td className="px-5 py-3 text-sm text-gray-600">{p.date || '—'}</td>
+                      <td className="px-5 py-3">
+                        {isEditing ? (
+                          <div className="flex items-center gap-2">
+                            {isWeightFix && (
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  step="0.001"
+                                  min="0"
+                                  className="w-36 px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-500"
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  placeholder="Kg per NOS"
+                                  autoFocus
+                                />
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-amber-500 font-medium">Kg</span>
+                              </div>
+                            )}
+                            {isDateFix && (
+                              <input
+                                type="date"
+                                className="w-40 px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-500"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                autoFocus
+                              />
+                            )}
+                            <button
+                              onClick={() => handleSave(p)}
+                              disabled={saving || !editValue}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 disabled:opacity-50 transition-colors flex items-center gap-1 shadow-sm"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">save</span>
+                              {saving ? 'Saving...' : 'Save'}
+                            </button>
+                            <button
+                              onClick={handleCancel}
+                              className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-500 text-xs font-medium hover:bg-gray-50 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="flex items-center gap-1 text-amber-700 text-xs font-medium">
+                            <span className="material-symbols-outlined text-[14px]">error_outline</span>
+                            {p.reason}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-center">
+                        {!isEditing && (
+                          <button
+                            onClick={() => handleFixNow(p)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-100 border border-amber-300 text-amber-800 text-xs font-semibold hover:bg-amber-200 hover:shadow-sm transition-all duration-200 group"
+                          >
+                            <span className="material-symbols-outlined text-[14px] group-hover:rotate-12 transition-transform">build</span>
+                            Fix Now
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

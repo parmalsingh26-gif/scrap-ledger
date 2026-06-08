@@ -191,7 +191,7 @@ export function BvpScrapPosition() {
   const [scrapForm, setScrapForm] = useState({
     date_from: '', date_to: '', type: '', desc: '', qty_nos: '', qty_sets: '',
     wt_wta: '', wt_tb: '', wt_ms: '', wt_nf: '', wt_other: '',
-    lot: '', party: '', rate: '', remarks: ''
+    lot: '', party: '', rate: '', rateMode: 'weight' as 'weight' | 'nos' | 'volume' | 'manual', remarks: ''
   });
   const [coachForm, setCoachForm] = useState({
     coach_no: '', code: '', tare: '', seats: '', berths: '', cost: '',
@@ -256,9 +256,41 @@ export function BvpScrapPosition() {
     ).toFixed(3);
   };
   const calcAmount = () => {
-    const total = calcWtTotal();
     const rate = +scrapForm.rate || 0;
-    return rate && total ? Math.round(rate * total) : 0;
+    if (!rate) return 0;
+    const mode = scrapForm.rateMode || 'weight';
+    if (mode === 'weight') {
+      const total = calcWtTotal();
+      return total ? Math.round(rate * total) : 0;
+    } else if (mode === 'nos') {
+      const nos = +scrapForm.qty_nos || 0;
+      return nos ? Math.round(rate * nos) : 0;
+    } else if (mode === 'volume') {
+      // For volume items like oil, user enters litre qty in description or qty_nos
+      const nos = +scrapForm.qty_nos || 0;
+      return nos ? Math.round(rate * nos) : 0;
+    } else {
+      // manual — rate IS the total amount
+      return Math.round(rate);
+    }
+  };
+
+  const getRateLabel = () => {
+    const mode = scrapForm.rateMode || 'weight';
+    if (mode === 'weight') return 'Rate (₹ per MT)';
+    if (mode === 'nos') return 'Rate (₹ per Nos)';
+    if (mode === 'volume') return 'Rate (₹ per Litre)';
+    return 'Total Amount (₹)';
+  };
+
+  const getCalcExplanation = () => {
+    const rate = +scrapForm.rate || 0;
+    if (!rate) return '';
+    const mode = scrapForm.rateMode || 'weight';
+    if (mode === 'weight') return `${calcWtTotal()} MT × ₹${rate} = ₹${calcAmount().toLocaleString()}`;
+    if (mode === 'nos') return `${scrapForm.qty_nos || 0} Nos × ₹${rate} = ₹${calcAmount().toLocaleString()}`;
+    if (mode === 'volume') return `${scrapForm.qty_nos || 0} Ltr × ₹${rate} = ₹${calcAmount().toLocaleString()}`;
+    return `Direct: ₹${calcAmount().toLocaleString()}`;
   };
 
   /* ===== Session Handling ===== */
@@ -519,7 +551,7 @@ export function BvpScrapPosition() {
 
     await db.bvpScrapEntries.add(entry);
     showToast('✓ Scrap entry saved! Dashboard update ho gaya.');
-    setScrapForm({ date_from: '', date_to: '', type: '', desc: '', qty_nos: '', qty_sets: '', wt_wta: '', wt_tb: '', wt_ms: '', wt_nf: '', wt_other: '', lot: '', party: '', rate: '', remarks: '' });
+    setScrapForm({ date_from: '', date_to: '', type: '', desc: '', qty_nos: '', qty_sets: '', wt_wta: '', wt_tb: '', wt_ms: '', wt_nf: '', wt_other: '', lot: '', party: '', rate: '', rateMode: 'weight', remarks: '' });
     loadData();
   };
 
@@ -1452,14 +1484,49 @@ export function BvpScrapPosition() {
                 <label className="bvp-fl bvp-required">Handed Over To (Party)</label>
                 <input type="text" className="bvp-input" value={scrapForm.party} onChange={e => setScrapForm({ ...scrapForm, party: e.target.value })} placeholder="e.g. GALAXY PETROLEUM - RAIGADH" />
               </div>
-              <div className="bvp-form-group">
-                <label className="bvp-fl">Rate (₹ per MT / unit)</label>
-                <input type="number" className="bvp-input" value={scrapForm.rate} onChange={e => setScrapForm({ ...scrapForm, rate: e.target.value })} placeholder="0" />
+              <div className="bvp-form-group bvp-full" style={{ background: '#F0F4FF', borderRadius: 10, padding: 12, border: '1px solid #C7D5F0' }}>
+                <label className="bvp-fl" style={{ fontWeight: 700, color: '#1e40af', marginBottom: 6 }}>💰 Rate Calculation Mode</label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {[
+                    { val: 'weight' as const, label: '⚖️ Weight (MT)', desc: 'Rate × Total Weight' },
+                    { val: 'nos' as const, label: '🔢 Nos', desc: 'Rate × Qty Nos' },
+                    { val: 'volume' as const, label: '💧 Litre', desc: 'Rate × Qty Litres' },
+                    { val: 'manual' as const, label: '✏️ Direct Amount', desc: 'Enter total directly' },
+                  ].map(opt => (
+                    <button
+                      key={opt.val}
+                      type="button"
+                      onClick={() => setScrapForm({ ...scrapForm, rateMode: opt.val })}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 8,
+                        border: scrapForm.rateMode === opt.val ? '2px solid #3b82f6' : '1px solid #d1d5db',
+                        background: scrapForm.rateMode === opt.val ? '#dbeafe' : '#fff',
+                        color: scrapForm.rateMode === opt.val ? '#1e40af' : '#6b7280',
+                        fontSize: 12,
+                        fontWeight: scrapForm.rateMode === opt.val ? 700 : 500,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                      }}
+                      title={opt.desc}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label className="bvp-fl" style={{ fontSize: 11, color: '#4b5563' }}>{getRateLabel()}</label>
+                    <input type="number" className="bvp-input" value={scrapForm.rate} onChange={e => setScrapForm({ ...scrapForm, rate: e.target.value })} placeholder="0" style={{ borderColor: '#93c5fd' }} />
+                  </div>
+                  <div>
+                    <label className="bvp-fl" style={{ fontSize: 11, color: '#4b5563' }}>Total Amount (₹) — Auto</label>
+                    <input type="text" className="bvp-input bvp-auto-field" readOnly value={calcAmount() ? '₹' + calcAmount().toLocaleString() : ''} placeholder="Auto" style={{ fontWeight: 700, color: '#059669' }} />
+                    {getCalcExplanation() && <span className="bvp-hint" style={{ color: '#6366f1', fontWeight: 500 }}>{getCalcExplanation()}</span>}
+                  </div>
+                </div>
               </div>
-              <div className="bvp-form-group">
-                <label className="bvp-fl">Total Amount (₹) — Auto</label>
-                <input type="text" className="bvp-input bvp-auto-field" readOnly value={calcAmount() ? '₹' + calcAmount().toLocaleString() : ''} placeholder="Auto calculated" />
-              </div>
+
               <div className="bvp-form-group">
                 <label className="bvp-fl">Remarks</label>
                 <input type="text" className="bvp-input" value={scrapForm.remarks} onChange={e => setScrapForm({ ...scrapForm, remarks: e.target.value })} placeholder="Optional remarks" />
@@ -1467,7 +1534,7 @@ export function BvpScrapPosition() {
             </div>
             <div className="bvp-btn-row">
               <button className="bvp-btn bvp-btn-primary" onClick={saveScrapEntry}>✓ Save Entry</button>
-              <button className="bvp-btn bvp-btn-ghost" onClick={() => setScrapForm({ date_from: '', date_to: '', type: '', desc: '', qty_nos: '', qty_sets: '', wt_wta: '', wt_tb: '', wt_ms: '', wt_nf: '', wt_other: '', lot: '', party: '', rate: '', remarks: '' })}>✕ Clear</button>
+              <button className="bvp-btn bvp-btn-ghost" onClick={() => setScrapForm({ date_from: '', date_to: '', type: '', desc: '', qty_nos: '', qty_sets: '', wt_wta: '', wt_tb: '', wt_ms: '', wt_nf: '', wt_other: '', lot: '', party: '', rate: '', rateMode: 'weight', remarks: '' })}>✕ Clear</button>
               {calcWtTotal() > 0 && <span className="bvp-calc-badge">Total: {calcWtTotal()} MT {calcAmount() ? '• ₹' + calcAmount().toLocaleString() : ''}</span>}
             </div>
           </div>

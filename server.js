@@ -61,7 +61,10 @@ const InwardSchema = new mongoose.Schema({
   coverType: String,
   rcCount: Number,
   fcCount: Number,
-  weightPerNos: Number
+  weightPerNos: Number,
+  valueMode: String,    // 'weight' | 'nos' | 'volume' | 'manual'
+  rate: Number,         // rate per unit (per MT/Kg/Nos/Litre)
+  totalValue: Number    // calculated total value
 });
 const Inward = mongoose.model('InwardEntry', InwardSchema);
 
@@ -76,7 +79,9 @@ const OutwardSchema = new mongoose.Schema({
   dateLotApplied: String,
   dateSold: String,
   dateDelivered: String,
-  weightPerNos: Number
+  weightPerNos: Number,
+  rcCount: Number,
+  fcCount: Number
 });
 const Outward = mongoose.model('OutwardEntry', OutwardSchema);
 
