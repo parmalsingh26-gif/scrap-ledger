@@ -180,6 +180,15 @@ export function BvpScrapPosition() {
   const [editingScrapId, setEditingScrapId] = useState<string | null>(null);
   const [editingScrapData, setEditingScrapData] = useState<Partial<BvpScrapEntry>>({});
 
+  // All Records Filters
+  const [allRecordsDateFrom, setAllRecordsDateFrom] = useState('');
+  const [allRecordsDateTo, setAllRecordsDateTo] = useState('');
+
+  // Lot-wise Summary Filters
+  const [lotSummaryDateFrom, setLotSummaryDateFrom] = useState('');
+  const [lotSummaryDateTo, setLotSummaryDateTo] = useState('');
+  const [lotSummarySort, setLotSummarySort] = useState('date_desc');
+
   // Batch Manager states
   const [batchView, setBatchView] = useState<'list' | 'entries'>('list');
   const [batchManagerSess, setBatchManagerSess] = useState<string | null>(null);
@@ -980,21 +989,61 @@ export function BvpScrapPosition() {
     x.desc?.toLowerCase().includes(entrySearchTerm.toLowerCase()) ||
     x.party?.toLowerCase().includes(entrySearchTerm.toLowerCase())
   );
-  const filteredScrapSummary = sessionFiltered.filter(x =>
-    !summarySearchTerm ||
-    x.lot?.toLowerCase().includes(summarySearchTerm.toLowerCase()) ||
-    x.desc?.toLowerCase().includes(summarySearchTerm.toLowerCase()) ||
-    x.party?.toLowerCase().includes(summarySearchTerm.toLowerCase())
-  );
+  const filteredScrapSummary = sessionFiltered.filter(x => {
+    const matchSearch = !summarySearchTerm ||
+      x.lot?.toLowerCase().includes(summarySearchTerm.toLowerCase()) ||
+      x.desc?.toLowerCase().includes(summarySearchTerm.toLowerCase()) ||
+      x.party?.toLowerCase().includes(summarySearchTerm.toLowerCase());
+      
+    let matchDate = true;
+    const dFromLot = lotSummaryDateFrom ? new Date(lotSummaryDateFrom) : null;
+    const dToLot = lotSummaryDateTo ? new Date(lotSummaryDateTo) : null;
+    
+    const isWithinLot = (dateStr: string) => {
+      if (!dateStr) return true;
+      const d = new Date(dateStr);
+      if (dFromLot && d < dFromLot) return false;
+      if (dToLot && d > dToLot) return false;
+      return true;
+    };
+    
+    if (dFromLot || dToLot) {
+      matchDate = isWithinLot(x.date_from) || isWithinLot(x.date_to);
+    }
+    
+    return matchSearch && matchDate;
+  }).sort((a, b) => {
+    if (lotSummarySort === 'date_desc') return new Date(b.date_from || 0).getTime() - new Date(a.date_from || 0).getTime();
+    if (lotSummarySort === 'date_asc') return new Date(a.date_from || 0).getTime() - new Date(b.date_from || 0).getTime();
+    if (lotSummarySort === 'amt_desc') return (b.amount || 0) - (a.amount || 0);
+    if (lotSummarySort === 'amt_asc') return (a.amount || 0) - (b.amount || 0);
+    return 0;
+  });
   // Keep filteredScrap as alias for Entry tab (used elsewhere)
   const filteredScrap = filteredScrapEntry;
   const filteredCoach = coachFilter === 'all' ? coachEntries : coachEntries.filter(x => x.session === coachFilter);
   const filteredSurvey = surveyFilter === 'all' ? surveyEntries : surveyEntries.filter(x => x.session === surveyFilter);
 
+  // All records Filter Logic
+  const dFrom = allRecordsDateFrom ? new Date(allRecordsDateFrom) : null;
+  const dTo = allRecordsDateTo ? new Date(allRecordsDateTo) : null;
+
+  const isWithin = (dateStr: string) => {
+    if (!dateStr) return true;
+    const d = new Date(dateStr);
+    if (dFrom && d < dFrom) return false;
+    if (dTo && d > dTo) return false;
+    return true;
+  };
+
+  const fScrap = scrapEntries.filter(r => isWithin(r.date_from) || isWithin(r.date_to));
+  const fCoach = coachEntries.filter(r => isWithin(r.offer_date) || isWithin(r.sale_date) || isWithin(r.rso_date));
+  const fSurvey = surveyEntries.filter(r => isWithin(r.offer_date));
+
   // All records KPIs
-  const totalScrapWT = scrapEntries.reduce((a, x) => a + (+x.wt_total || 0), 0);
-  const totalAmt = scrapEntries.reduce((a, x) => a + (+x.amount || 0), 0);
-  const totalCoachesCount = coachEntries.filter(x => x.sr !== 'AGG').length;
+  const totalScrapWT = fScrap.reduce((a, x) => a + (+x.wt_total || 0), 0);
+  const totalAmt = fScrap.reduce((a, x) => a + (+x.amount || 0), 0);
+  const totalCoachesCount = fCoach.filter(x => x.sr !== 'AGG').length;
 
   /* ===== Chart Mode Labels ===== */
   const chartModeColors: Record<string, string> = { total: '#185FA5', ferrous: '#378ADD', wta: '#1D9E75', nf: '#BA7517', misc: '#888780' };
@@ -1629,7 +1678,7 @@ export function BvpScrapPosition() {
           <div className="bvp-entries-wrap">
             <div className="bvp-entries-header">
               <h3>Lot-wise Summary — {currentSession}</h3>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <input 
                   type="text" 
                   placeholder="Search lot, desc, party..." 
@@ -1638,10 +1687,22 @@ export function BvpScrapPosition() {
                   value={summarySearchTerm}
                   onChange={e => setSummarySearchTerm(e.target.value)}
                 />
+                <input type="date" className="bvp-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={lotSummaryDateFrom} onChange={e => setLotSummaryDateFrom(e.target.value)} />
+                <span style={{ fontSize: 12, color: 'var(--bvp-text3)' }}>to</span>
+                <input type="date" className="bvp-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={lotSummaryDateTo} onChange={e => setLotSummaryDateTo(e.target.value)} />
+                <select className="bvp-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={lotSummarySort} onChange={e => setLotSummarySort(e.target.value)}>
+                  <option value="date_desc">Date (Newest First)</option>
+                  <option value="date_asc">Date (Oldest First)</option>
+                  <option value="amt_desc">Amount (High to Low)</option>
+                  <option value="amt_asc">Amount (Low to High)</option>
+                </select>
                 <select className="bvp-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={scrapFilter} onChange={e => setScrapFilter(e.target.value)}>
                   <option value="all">All Sessions</option>
                   {allSessions.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
+                {(lotSummaryDateFrom || lotSummaryDateTo) && (
+                  <button className="bvp-btn bvp-btn-ghost" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => { setLotSummaryDateFrom(''); setLotSummaryDateTo(''); }}>✕ Clear Date</button>
+                )}
                 <span style={{ fontSize: 12, color: 'var(--bvp-text3)' }}>{filteredScrapSummary.length} entries</span>
               </div>
             </div>
@@ -1674,7 +1735,7 @@ export function BvpScrapPosition() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredScrapSummary.length > 0 ? [...filteredScrapSummary].reverse().map(r => (
+                  {filteredScrapSummary.length > 0 ? filteredScrapSummary.map(r => (
                     <tr key={r.id}>
                       <td style={{ border: '1px solid #ddd', padding: '4px' }}>{fmt(r.date_from)}</td>
                       <td style={{ border: '1px solid #ddd', padding: '4px' }}>{fmt(r.date_to) === fmt(r.date_from) ? '' : fmt(r.date_to)}</td>
@@ -2012,13 +2073,29 @@ export function BvpScrapPosition() {
       {/* ==================== ALL RECORDS VIEW ==================== */}
       {activeView === 'all-records' && (
         <div className="bvp-view" id="bvp-print-records">
+          {/* New Filter Section */}
+          <div className="bvp-entries-wrap" style={{ marginBottom: 20 }}>
+            <div className="bvp-entries-header"><h3>Filter All Records</h3></div>
+            <div style={{ padding: '16px', display: 'flex', gap: '16px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div className="bvp-form-group" style={{ margin: 0, minWidth: 200 }}>
+                <label className="bvp-fl">From Date</label>
+                <input type="date" className="bvp-input" value={allRecordsDateFrom} onChange={e => setAllRecordsDateFrom(e.target.value)} />
+              </div>
+              <div className="bvp-form-group" style={{ margin: 0, minWidth: 200 }}>
+                <label className="bvp-fl">To Date</label>
+                <input type="date" className="bvp-input" value={allRecordsDateTo} onChange={e => setAllRecordsDateTo(e.target.value)} />
+              </div>
+              <button className="bvp-btn bvp-btn-ghost" style={{ padding: '10px 16px' }} onClick={() => { setAllRecordsDateFrom(''); setAllRecordsDateTo(''); }}>✕ Clear Filter</button>
+            </div>
+          </div>
+
           <div className="bvp-kpi-grid">
             {[
-              { l: 'Total Scrap Entries', v: scrapEntries.length },
+              { l: 'Total Scrap Entries', v: fScrap.length },
               { l: 'Total Weight (MT)', v: totalScrapWT.toFixed(1) + ' MT' },
               { l: 'Total Revenue', v: '₹' + (totalAmt / 10000000).toFixed(2) + ' Cr' },
               { l: 'Coach Entries', v: totalCoachesCount },
-              { l: 'Auction Lots', v: surveyEntries.length },
+              { l: 'Auction Lots', v: fSurvey.length },
             ].map((k, i) => (
               <div key={i} className="bvp-kpi">
                 <div className="bvp-kpi-label">{k.l}</div>
@@ -2032,12 +2109,12 @@ export function BvpScrapPosition() {
             <div className="bvp-entries-header"><h3>Scrap Disposal Records</h3></div>
             <div className="bvp-tbl-wrap">
               <table className="bvp-table">
-                <thead><tr><th>Session</th><th>Date</th><th>Type</th><th>Description (short)</th><th>Total WT</th><th>Party</th><th>Amount ₹</th></tr></thead>
+                <thead><tr><th>Session</th><th>Date (From - To)</th><th>Type</th><th>Description (short)</th><th>Total WT</th><th>Party</th><th>Amount ₹</th></tr></thead>
                 <tbody>
-                  {scrapEntries.length > 0 ? [...scrapEntries].reverse().map(r => (
+                  {fScrap.length > 0 ? [...fScrap].reverse().map(r => (
                     <tr key={r.id}>
                       <td><span className="bvp-badge bvp-badge-oa">{r.session}</span></td>
-                      <td>{fmt(r.date_from)}</td>
+                      <td>{fmt(r.date_from)}{r.date_to && r.date_to !== r.date_from ? ` to ${fmt(r.date_to)}` : ''}</td>
                       <td><span className="bvp-badge bvp-badge-auction">{r.type}</span></td>
                       <td style={{ maxWidth: 200, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{r.desc}</td>
                       <td>{r.wt_total ? r.wt_total + ' MT' : '-'}</td>
@@ -2046,6 +2123,14 @@ export function BvpScrapPosition() {
                     </tr>
                   )) : <tr><td colSpan={7} className="bvp-empty-state">No records</td></tr>}
                 </tbody>
+                <tfoot>
+                  <tr style={{ background: '#f8fafc', fontWeight: 'bold' }}>
+                    <td colSpan={4} style={{ textAlign: 'right', paddingRight: '16px' }}>Total:</td>
+                    <td>{totalScrapWT.toFixed(3)} MT</td>
+                    <td></td>
+                    <td>₹{totalAmt.toLocaleString('en-IN')}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -2057,7 +2142,7 @@ export function BvpScrapPosition() {
               <table className="bvp-table">
                 <thead><tr><th>Session</th><th>Sr.</th><th>Coach No.</th><th>Code</th><th>Cat.</th><th>Age</th><th>Purchaser</th><th>Status</th></tr></thead>
                 <tbody>
-                  {coachEntries.length > 0 ? [...coachEntries].reverse().map(r => (
+                  {fCoach.length > 0 ? [...fCoach].reverse().map(r => (
                     <tr key={r.id}>
                       <td><span className="bvp-badge bvp-badge-oa">{r.session}</span></td>
                       <td>{r.sr}</td>
@@ -2069,6 +2154,14 @@ export function BvpScrapPosition() {
                     </tr>
                   )) : <tr><td colSpan={8} className="bvp-empty-state">No records</td></tr>}
                 </tbody>
+                <tfoot>
+                  <tr style={{ background: '#f8fafc', fontWeight: 'bold' }}>
+                    <td colSpan={3} style={{ textAlign: 'right', paddingRight: '16px' }}>Total Coaches:</td>
+                    <td>{totalCoachesCount}</td>
+                    <td colSpan={3} style={{ textAlign: 'right', paddingRight: '16px' }}>Total Sale Amount:</td>
+                    <td>₹{fCoach.reduce((a, c) => a + (Number(c.sale_amt) || 0), 0).toLocaleString('en-IN')}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -2080,7 +2173,7 @@ export function BvpScrapPosition() {
               <table className="bvp-table">
                 <thead><tr><th>Session</th><th>Lot No.</th><th>Qty</th><th>Unit</th><th>Offer Date</th><th>Bid ₹</th><th>Status</th></tr></thead>
                 <tbody>
-                  {surveyEntries.length > 0 ? surveyEntries.map(r => (
+                  {fSurvey.length > 0 ? [...fSurvey].reverse().map(r => (
                     <tr key={r.id}>
                       <td><span className="bvp-badge bvp-badge-oa">{r.session}</span></td>
                       <td style={{ fontFamily: 'monospace', fontSize: 11 }}>{r.lot}</td>
@@ -2091,6 +2184,14 @@ export function BvpScrapPosition() {
                     </tr>
                   )) : <tr><td colSpan={7} className="bvp-empty-state">No records</td></tr>}
                 </tbody>
+                <tfoot>
+                  <tr style={{ background: '#f8fafc', fontWeight: 'bold' }}>
+                    <td colSpan={2} style={{ textAlign: 'right', paddingRight: '16px' }}>Total Lots:</td>
+                    <td>{fSurvey.length}</td>
+                    <td colSpan={2} style={{ textAlign: 'right', paddingRight: '16px' }}>Total Bid Amount:</td>
+                    <td colSpan={2}>₹{fSurvey.reduce((a, s) => a + (s.bid || 0), 0).toLocaleString('en-IN')}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
