@@ -23,6 +23,11 @@ export function AdminSettings() {
   const [oldPin, setOldPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [pinStatus, setPinStatus] = useState('');
+
+  const [oldNbPin, setOldNbPin] = useState('');
+  const [newNbPin, setNewNbPin] = useState('');
+  const [nbPinStatus, setNbPinStatus] = useState('');
+  
   const [dbStatus, setDbStatus] = useState('');
   
   const [oldPassword, setOldPassword] = useState('');
@@ -30,7 +35,7 @@ export function AdminSettings() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordStatus, setPasswordStatus] = useState('');
   
-  const { updatePin, changePassword } = useAuth();
+  const { updatePin, changePassword, updateNotebookPin } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!items || !categories || !units) return null;
@@ -97,6 +102,18 @@ export function AdminSettings() {
        setTimeout(() => setPinStatus(''), 3000);
     } else {
        setPinStatus('Error: Old PIN is incorrect.');
+    }
+  };
+
+  const handleChangeNotebookPin = (e: any) => {
+    e.preventDefault();
+    if (updateNotebookPin(oldNbPin, newNbPin)) {
+       setNbPinStatus('Notebook PIN updated successfully!');
+       setOldNbPin('');
+       setNewNbPin('');
+       setTimeout(() => setNbPinStatus(''), 3000);
+    } else {
+       setNbPinStatus('Error: Old Notebook PIN is incorrect.');
     }
   };
 
@@ -442,8 +459,10 @@ export function AdminSettings() {
                  <span className="material-symbols-outlined mr-2 text-error" style={{ fontVariationSettings: "'FILL' 1" }}>lock_person</span>
                  <h3 className="font-headline-md text-[18px] text-on-surface">Security Settings</h3>
               </div>
-              <div className="p-6 relative z-10">
-                 <form onSubmit={handleChangePin} className="space-y-5">
+              <div className="p-6 relative z-10 space-y-8">
+                 {/* Admin PIN */}
+                 <form onSubmit={handleChangePin} className="space-y-4">
+                    <h4 className="font-label-lg text-on-surface">Admin PIN</h4>
                     {pinStatus && (
                        <div className={`p-3 text-label-md rounded-xl border backdrop-blur-md flex items-center ${pinStatus.includes('Error') ? 'bg-error-container/20 text-error border-error/30' : 'bg-tertiary-container/20 text-tertiary border-tertiary/30'}`}>
                           <span className="material-symbols-outlined mr-2 text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>
@@ -486,7 +505,59 @@ export function AdminSettings() {
                     </div>
                     <div className="flex justify-end">
                       <button type="submit" className="bg-surface-variant hover:bg-outline-variant/40 text-on-surface border border-outline-variant/30 px-6 py-2.5 rounded-xl font-label-md text-label-md transition-colors shadow-sm">
-                         Update PIN
+                         Update Admin PIN
+                      </button>
+                    </div>
+                 </form>
+
+                 <div className="h-px bg-outline-variant/30 w-full"></div>
+
+                 {/* Notebook PIN */}
+                 <form onSubmit={handleChangeNotebookPin} className="space-y-4">
+                    <h4 className="font-label-lg text-on-surface">Notebook PIN</h4>
+                    {nbPinStatus && (
+                       <div className={`p-3 text-label-md rounded-xl border backdrop-blur-md flex items-center ${nbPinStatus.includes('Error') ? 'bg-error-container/20 text-error border-error/30' : 'bg-tertiary-container/20 text-tertiary border-tertiary/30'}`}>
+                          <span className="material-symbols-outlined mr-2 text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                            {nbPinStatus.includes('Error') ? 'error' : 'check_circle'}
+                          </span>
+                          {nbPinStatus}
+                       </div>
+                    )}
+                    <div className="flex gap-4">
+                      <div className="flex-1 space-y-1 relative pt-2">
+                        <input 
+                          type="password" 
+                          maxLength={4}
+                          className="glass-input floating-input w-full rounded-xl py-2.5 px-4 font-data-mono tracking-widest text-on-surface focus:outline-none placeholder-transparent text-center"
+                          value={oldNbPin}
+                          onChange={(e) => setOldNbPin(e.target.value.replace(/\D/g, ''))}
+                          placeholder="Old PIN"
+                          id="old-nb-pin"
+                          required
+                        />
+                        <label htmlFor="old-nb-pin" className="floating-label absolute left-4 top-4.5 font-body-sm text-body-sm text-outline transition-all duration-200 pointer-events-none">
+                          Current Notebook PIN
+                        </label>
+                      </div>
+                      <div className="flex-1 space-y-1 relative pt-2">
+                        <input 
+                          type="password" 
+                          maxLength={4}
+                          className="glass-input floating-input w-full rounded-xl py-2.5 px-4 font-data-mono tracking-widest text-on-surface focus:outline-none placeholder-transparent text-center border-primary/40 focus:border-primary"
+                          value={newNbPin}
+                          onChange={(e) => setNewNbPin(e.target.value.replace(/\D/g, ''))}
+                          placeholder="New PIN"
+                          id="new-nb-pin"
+                          required
+                        />
+                        <label htmlFor="new-nb-pin" className="floating-label absolute left-4 top-4.5 font-body-sm text-body-sm text-outline transition-all duration-200 pointer-events-none text-primary">
+                          New Notebook PIN
+                        </label>
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button type="submit" className="bg-surface-variant hover:bg-outline-variant/40 text-on-surface border border-outline-variant/30 px-6 py-2.5 rounded-xl font-label-md text-label-md transition-colors shadow-sm">
+                         Update Notebook PIN
                       </button>
                     </div>
                  </form>

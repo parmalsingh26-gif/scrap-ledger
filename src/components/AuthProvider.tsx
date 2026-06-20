@@ -10,6 +10,9 @@ interface AuthContextType {
   logout: () => void;
   updatePin: (oldPin: string, newPin: string) => boolean;
   changePassword: (oldPassword: string, newPassword: string) => boolean;
+  isNotebookUnlocked: boolean;
+  unlockNotebook: (pin: string) => boolean;
+  updateNotebookPin: (oldPin: string, newPin: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,6 +32,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [storedPin, setStoredPin] = useState(() => {
     return localStorage.getItem('adminPin') || '1234';
+  });
+
+  // Notebook PIN state
+  const [isNotebookUnlocked, setIsNotebookUnlocked] = useState(false);
+  const [storedNotebookPin, setStoredNotebookPin] = useState(() => {
+    return localStorage.getItem('notebookPin') || '1232';
   });
 
   // Stored credentials
@@ -93,11 +102,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return false;
   };
 
+  const unlockNotebook = (pin: string) => {
+    if (pin === storedNotebookPin) {
+      setIsNotebookUnlocked(true);
+      return true;
+    }
+    return false;
+  };
+
+  const updateNotebookPin = (oldPin: string, newPin: string) => {
+    if (oldPin === storedNotebookPin) {
+      localStorage.setItem('notebookPin', newPin);
+      setStoredNotebookPin(newPin);
+      return true;
+    }
+    return false;
+  };
+
   return (
     <AuthContext.Provider value={{ 
       isLoggedIn, isAdmin, username,
       loginApp, logoutApp, 
-      login, logout, updatePin, changePassword 
+      login, logout, updatePin, changePassword,
+      isNotebookUnlocked, unlockNotebook, updateNotebookPin
     }}>
       {children}
     </AuthContext.Provider>
