@@ -142,8 +142,8 @@ export function ScrapChart() {
               }}
             />
             <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', fontFamily: 'Plus Jakarta Sans' }} />
-            <Line type="monotone" dataKey="Inward"  stroke="#007d55" strokeWidth={3} dot={{ r: 3, fill: '#007d55', strokeWidth: 0 }} activeDot={{ r: 6 }} />
-            <Line type="monotone" dataKey="Outward" stroke="#4b41e1" strokeWidth={3} dot={{ r: 3, fill: '#4b41e1', strokeWidth: 0 }} activeDot={{ r: 6 }} />
+            <Line type="linear" dataKey="Inward"  stroke="#007d55" strokeWidth={2.5} dot={{ r: 3, fill: '#007d55', strokeWidth: 0 }} activeDot={{ r: 6 }} connectNulls strokeLinecap="round" strokeLinejoin="round" />
+            <Line type="linear" dataKey="Outward" stroke="#4b41e1" strokeWidth={2.5} dot={{ r: 3, fill: '#4b41e1', strokeWidth: 0 }} activeDot={{ r: 6 }} connectNulls strokeLinecap="round" strokeLinejoin="round" />
           </LineChart>
         </ResponsiveContainer>
       </div>

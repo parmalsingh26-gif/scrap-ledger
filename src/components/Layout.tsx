@@ -8,6 +8,7 @@ import { useAuth } from './AuthProvider';
 const navItems = [
   { name: 'Dashboard', path: '/', icon: 'dashboard' },
   { name: 'Inward Entry', path: '/inward', icon: 'login' },
+  { name: 'Entry History', path: '/history', icon: 'history' },
   { name: 'Outward Entry', path: '/outward', icon: 'logout' },
   { name: 'Total Scrap Position', path: '/total-scrap', icon: 'analytics' },
   { name: 'BVP Scrap Position', path: '/bvp-scrap', icon: 'precision_manufacturing' },

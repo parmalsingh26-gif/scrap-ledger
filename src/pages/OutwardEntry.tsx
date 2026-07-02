@@ -124,7 +124,19 @@ export function OutwardEntry() {
 
       await db.outwardEntries.add(entryData);
 
-      setStatus({ type: 'success', msg: 'Outward entry recorded successfully.' });
+      // ─── Auto-save HSN to item master ────────────────────────────────────
+      // Agar material ka HSN abhi save nahi hai ya alag hai, to update karo
+      const selectedItemObj = items?.find(i => i.id === Number(selectedItemId));
+      if (selectedItemObj && hsnCode && selectedItemObj.hsnCode !== hsnCode) {
+        try {
+          await db.items.update(Number(selectedItemId), { ...selectedItemObj, hsnCode });
+        } catch {
+          // Silent — HSN save fail hona critical nahi hai
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
+      setStatus({ type: 'success', msg: 'Outward entry recorded successfully.' + (selectedItemObj && selectedItemObj.hsnCode !== hsnCode ? ' HSN code bhi save ho gaya!' : '') });
       setSelectedItemId('');
       setLotNumber('');
       setHsnCode('');
