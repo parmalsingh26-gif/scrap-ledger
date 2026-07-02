@@ -1,16 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import ExcelJS from 'exceljs';
 
 import { db, useLiveQuery, type Item, type InwardEntry, type OutwardEntry } from '../db/db';
 import { cn } from '../lib/utils';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { WhatsAppReportGenerator } from '../components/WhatsAppReportGenerator';
 import { useAuth } from '../components/AuthProvider';
 import { EditInwardModal } from '../components/EditInwardModal';
 import { EditOutwardModal } from '../components/EditOutwardModal';
 import { ScrapChart } from '../components/ScrapChart';
 import { CategoryBadge } from '../components/CategoryBadge';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 export function Dashboard() {
   const items = useLiveQuery(() => db.items.toArray());
@@ -40,10 +41,79 @@ export function Dashboard() {
     return () => { document.body.style.overflow = ''; };
   }, [historyItem]);
 
-  if (!items || !units || !inwardEntries || !outwardEntries || !balances || !categories) return null;
+  // ── ALL useMemo hooks MUST be before any early return ────────────────────
+  const unitMap = useMemo(() => new Map((units || []).map(u => [u.id, u.name])), [units]);
+  const catMap = useMemo(() => new Map((categories || []).map(c => [c.id, c])), [categories]);
 
-  const unitMap = new Map(units.map(u => [u.id, u.name]));
-  const catMap = new Map(categories.map(c => [c.id, c]));
+  // Top 5 Materials by Inward quantity
+  const topMaterials = useMemo(() => {
+    if (!inwardEntries || !items) return [];
+    const totals: Record<number, number> = {};
+    inwardEntries.forEach(e => {
+      totals[e.itemId] = (totals[e.itemId] || 0) + e.quantity;
+    });
+    return Object.entries(totals)
+      .map(([id, qty]) => ({
+        name: (items.find(i => i.id === Number(id))?.name || 'Unknown').substring(0, 18),
+        qty: Math.round(qty * 10) / 10,
+      }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 5);
+  }, [inwardEntries, items]);
+
+  // Negative balance items
+  const negativeBalanceItems = useMemo(() => {
+    if (!items || !inwardEntries || !outwardEntries) return [];
+    const result: { itemName: string; balance: number; unit: string }[] = [];
+    items.forEach(item => {
+      const inByUnit: Record<number, number> = {};
+      inwardEntries.filter(e => e.itemId === item.id).forEach(e => {
+        inByUnit[e.unitId] = (inByUnit[e.unitId] || 0) + e.quantity;
+      });
+      const outByUnit: Record<number, number> = {};
+      outwardEntries.filter(e => e.itemId === item.id).forEach(e => {
+        outByUnit[e.unitId] = (outByUnit[e.unitId] || 0) + e.quantity;
+      });
+      Object.keys(outByUnit).forEach(uid => {
+        const u = Number(uid);
+        if (inByUnit[u] !== undefined) {
+          const bal = (inByUnit[u] || 0) - (outByUnit[u] || 0);
+          if (bal < 0) result.push({ itemName: item.name, balance: bal, unit: unitMap.get(u) || '' });
+        }
+      });
+    });
+    return result;
+  }, [items, inwardEntries, outwardEntries, unitMap]);
+
+  // Activity Feed — last 10 actions
+  const activityFeed = useMemo(() => {
+    if (!inwardEntries || !outwardEntries || !items) return [];
+    const inActions = inwardEntries.map(e => ({
+      type: 'INWARD' as const,
+      id: e.id,
+      itemName: items.find(i => i.id === e.itemId)?.name || 'Unknown',
+      qty: e.quantity,
+      unit: unitMap.get(e.unitId) || '',
+      date: new Date(e.date),
+      lot: e.lotNumber,
+    }));
+    const outActions = outwardEntries.map(e => ({
+      type: 'OUTWARD' as const,
+      id: e.id,
+      itemName: items.find(i => i.id === e.itemId)?.name || 'Unknown',
+      qty: e.quantity,
+      unit: unitMap.get(e.unitId) || '',
+      date: new Date(e.dateDelivered || e.dateSold),
+      lot: e.lotNumber,
+      firm: e.firmName,
+    }));
+    return [...inActions, ...outActions]
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, 10);
+  }, [inwardEntries, outwardEntries, items, unitMap]);
+  // ─────────────────────────────────────────────────────────────────────────
+
+  if (!items || !units || !inwardEntries || !outwardEntries || !balances || !categories) return null;
 
   const handleDeleteEntry = async (id: number) => {
     if (confirm('Are you sure you want to delete this inward entry?')) {
@@ -468,6 +538,98 @@ export function Dashboard() {
       </div>
 
       <ScrapChart />
+
+      {/* ── Negative Balance Alert ─────────────────────────────────────── */}
+      {negativeBalanceItems.length > 0 && (
+        <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+          <span className="material-symbols-outlined text-red-600 text-[22px] flex-shrink-0 mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>warning</span>
+          <div>
+            <p className="text-sm font-bold text-red-700">⚠️ {negativeBalanceItems.length} item{negativeBalanceItems.length > 1 ? 's mein' : ' mein'} stock negative hai!</p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {negativeBalanceItems.map((item, idx) => (
+                <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-100 border border-red-200 text-red-800 text-xs font-semibold">
+                  <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
+                  {item.itemName}: <span className="font-mono font-bold ml-1">{item.balance} {item.unit}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Top Materials + Activity Feed ──────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* Top Materials Chart */}
+        <div className="glass-panel rounded-xl shadow-sm p-5">
+          <h3 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-primary text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>bar_chart</span>
+            Top 5 Materials (Inward)
+          </h3>
+          {topMaterials.length > 0 ? (
+            <div className="h-52">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topMaterials} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E5E7EB" opacity={0.5} />
+                  <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#737686' }} />
+                  <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#374151' }} width={110} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '10px', border: '1px solid #E5E7EB', fontSize: '12px', fontFamily: 'Plus Jakarta Sans' }}
+                    formatter={(val: any) => [`${val} units`, 'Inward Qty']}
+                  />
+                  <Bar dataKey="qty" radius={[0, 6, 6, 0]}>
+                    {topMaterials.map((_, index) => (
+                      <Cell key={index} fill={['#007d55','#4b41e1','#f59e0b','#ef4444','#8b5cf6'][index % 5]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-52 flex items-center justify-center text-outline text-sm">Koi inward data nahi</div>
+          )}
+        </div>
+
+        {/* Activity Feed */}
+        <div className="glass-panel rounded-xl shadow-sm p-5">
+          <h3 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-secondary text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>rss_feed</span>
+            Live Activity Feed
+          </h3>
+          <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+            {activityFeed.length === 0 && (
+              <div className="text-center text-outline text-sm py-8">Koi activity nahi</div>
+            )}
+            {activityFeed.map((action, idx) => (
+              <div key={idx} className={`flex items-center gap-3 p-2.5 rounded-xl border transition-colors hover:bg-white/50 ${
+                action.type === 'INWARD' ? 'border-emerald-100 bg-emerald-50/50' : 'border-violet-100 bg-violet-50/50'
+              }`}>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  action.type === 'INWARD' ? 'bg-emerald-100' : 'bg-violet-100'
+                }`}>
+                  <span className={`material-symbols-outlined text-[14px] ${
+                    action.type === 'INWARD' ? 'text-emerald-600' : 'text-violet-600'
+                  }`}>{action.type === 'INWARD' ? 'arrow_downward' : 'arrow_upward'}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-on-surface truncate">{action.itemName}</p>
+                  <p className="text-[10px] text-outline">
+                    <span className={`font-bold ${
+                      action.type === 'INWARD' ? 'text-emerald-700' : 'text-violet-700'
+                    }`}>{action.type === 'INWARD' ? '+' : '-'}{action.qty} {action.unit}</span>
+                    {action.type === 'OUTWARD' && (action as any).firm ? ` → ${(action as any).firm}` : ''}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-[10px] text-outline">{format(action.date, 'dd MMM')}</p>
+                  {action.lot && <p className="text-[9px] text-outline-variant font-mono">{action.lot}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
 
       {/* Main Data Table Section */}
       <div className="glass-panel rounded-xl overflow-hidden shadow-sm">
