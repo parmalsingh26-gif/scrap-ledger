@@ -48,6 +48,12 @@ export interface InwardEntry {
   totalValue?: number;
 }
 
+export interface DeliverySlot {
+  date: string;       // delivery date (YYYY-MM-DD)
+  quantity: number;   // quantity delivered on this date
+  isFinal: boolean;   // kya ye final (last) delivery hai
+}
+
 export interface OutwardEntry {
   id?: number;
   itemId: number;
@@ -58,7 +64,8 @@ export interface OutwardEntry {
   firmName: string;
   dateLotApplied?: string;
   dateSold: string;
-  dateDelivered: string;
+  dateDelivered: string;      // backward compat — first or only delivery date
+  deliveries?: DeliverySlot[]; // NEW: multiple partial deliveries
   weightPerNos?: number;
   rcCount?: number;
   fcCount?: number;

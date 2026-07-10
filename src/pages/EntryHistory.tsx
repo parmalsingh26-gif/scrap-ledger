@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { db, useLiveQuery, type InwardEntry, type OutwardEntry } from '../db/db';
 import { EditInwardModal } from '../components/EditInwardModal';
@@ -12,9 +12,227 @@ type FilterType = 'daily' | 'monthly' | 'yearly';
 interface CombinedEntry {
   _type: 'INWARD' | 'OUTWARD';
   id?: number;
-  date: string; // normalized date for sorting
+  date: string;
   raw: InwardEntry | OutwardEntry;
 }
+
+// ── Export Helpers ────────────────────────────────────────────────────────────
+
+function formatDateSafe(dateStr: string | undefined): string {
+  if (!dateStr) return '—';
+  try { return format(parseISO(dateStr), 'dd MMM yyyy'); } catch { return dateStr; }
+}
+
+function exportToCSV(
+  entries: CombinedEntry[],
+  itemMap: Map<number | undefined, any>,
+  unitMap: Map<number | undefined, string>,
+  filterLabel: string
+) {
+  const rows: string[][] = [];
+
+  // Header
+  rows.push([
+    'Type', 'Material', 'Lot Number', 'Date', 'Quantity', 'Unit',
+    'Firm Name', 'HSN Code', 'Date Sold', 'Date Lot Applied',
+    'Delivery Schedule', 'Final Delivery Date',
+    'Machine Type', 'Cover Type', 'RC Count', 'FC Count'
+  ]);
+
+  entries.forEach(entry => {
+    const raw = entry.raw as any;
+    const item = itemMap.get(raw.itemId);
+    const unitName = unitMap.get(raw.unitId) || '';
+
+    if (entry._type === 'OUTWARD') {
+      const out = raw as OutwardEntry;
+      let deliverySchedule = '';
+      let finalDeliveryDate = formatDateSafe(out.dateDelivered);
+
+      if (out.deliveries && out.deliveries.length > 0) {
+        deliverySchedule = out.deliveries
+          .map(d => `${formatDateSafe(d.date)}: ${d.quantity} ${unitName}${d.isFinal ? ' [FINAL]' : ''}`)
+          .join(' | ');
+        const final = out.deliveries.find(d => d.isFinal);
+        if (final) finalDeliveryDate = formatDateSafe(final.date);
+      } else {
+        deliverySchedule = `${formatDateSafe(out.dateDelivered)}: ${out.quantity} ${unitName} [FINAL]`;
+      }
+
+      rows.push([
+        'OUTWARD',
+        item?.name || 'Unknown',
+        out.lotNumber || '',
+        formatDateSafe(entry.date),
+        String(out.quantity),
+        unitName,
+        out.firmName || '',
+        out.hsnCode || '',
+        formatDateSafe(out.dateSold),
+        out.dateLotApplied ? formatDateSafe(out.dateLotApplied) : 'Pending',
+        deliverySchedule,
+        finalDeliveryDate,
+        '', '', '', ''
+      ]);
+    } else {
+      const inw = raw as InwardEntry;
+      rows.push([
+        'INWARD',
+        item?.name || 'Unknown',
+        inw.lotNumber || '',
+        formatDateSafe(entry.date),
+        String(inw.quantity),
+        unitName,
+        '', '', '', '', '', '',
+        inw.machineType || '',
+        inw.coverType || '',
+        inw.rcCount ? String(inw.rcCount) : '',
+        inw.fcCount ? String(inw.fcCount) : '',
+      ]);
+    }
+  });
+
+  const csv = rows.map(row =>
+    row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+  ).join('\n');
+
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `entry-history-${filterLabel}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function printAsPDF(
+  entries: CombinedEntry[],
+  itemMap: Map<number | undefined, any>,
+  unitMap: Map<number | undefined, string>,
+  filterLabel: string
+) {
+  const outward = entries.filter(e => e._type === 'OUTWARD');
+  const inward = entries.filter(e => e._type === 'INWARD');
+
+  const renderOutwardRows = () => outward.map(entry => {
+    const out = entry.raw as OutwardEntry;
+    const item = itemMap.get(out.itemId);
+    const unitName = unitMap.get(out.unitId) || '';
+
+    let deliveriesHtml = '';
+    if (out.deliveries && out.deliveries.length > 0) {
+      deliveriesHtml = out.deliveries.map(d =>
+        `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;margin:2px;${
+          d.isFinal
+            ? 'background:#d1fae5;border:1px solid #6ee7b7;color:#065f46;'
+            : 'background:#f3f4f6;border:1px solid #d1d5db;color:#374151;'
+        }">${d.isFinal ? '🏁 ' : ''}${formatDateSafe(d.date)}: ${d.quantity} ${unitName}</span>`
+      ).join('');
+    } else {
+      deliveriesHtml = `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;margin:2px;background:#d1fae5;border:1px solid #6ee7b7;color:#065f46;">🏁 ${formatDateSafe(out.dateDelivered)}: ${out.quantity} ${unitName}</span>`;
+    }
+
+    const finalSlot = out.deliveries?.find(d => d.isFinal);
+    const finalDate = finalSlot ? formatDateSafe(finalSlot.date) : formatDateSafe(out.dateDelivered);
+
+    return `
+      <tr>
+        <td>${item?.name || '—'}</td>
+        <td><b>${out.lotNumber}</b></td>
+        <td>${out.firmName}</td>
+        <td>${out.quantity} ${unitName}</td>
+        <td>${formatDateSafe(out.dateSold)}</td>
+        <td>${deliveriesHtml}</td>
+        <td style="color:#065f46;font-weight:700;">${finalDate}</td>
+        <td>${out.dateLotApplied ? formatDateSafe(out.dateLotApplied) : '<span style="color:#d97706;">Pending</span>'}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const renderInwardRows = () => inward.map(entry => {
+    const inw = entry.raw as InwardEntry;
+    const item = itemMap.get(inw.itemId);
+    const unitName = unitMap.get(inw.unitId) || '';
+    return `
+      <tr>
+        <td>${item?.name || '—'}</td>
+        <td>${inw.lotNumber || '—'}</td>
+        <td>${inw.quantity} ${unitName}</td>
+        <td>${formatDateSafe(inw.date)}</td>
+        <td>${inw.machineType || '—'}</td>
+        <td>${inw.coverType || '—'}</td>
+        <td>${inw.rcCount ? inw.rcCount + ' Nos' : '—'}</td>
+        <td>${inw.fcCount ? inw.fcCount + ' Nos' : '—'}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Entry History — ${filterLabel}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #111; padding: 24px; font-size: 12px; }
+  h1 { font-size: 22px; font-weight: 800; color: #1e1b4b; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #6b7280; margin-bottom: 20px; }
+  .section-title { font-size: 14px; font-weight: 700; margin: 20px 0 8px; padding: 6px 12px; border-radius: 8px; display: flex; align-items: center; gap: 8px; }
+  .outward-title { background: #ede9fe; color: #4c1d95; }
+  .inward-title { background: #d1fae5; color: #065f46; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  th { background: #1e1b4b; color: white; padding: 8px 10px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  tr:nth-child(even) td { background: #f9fafb; }
+  tr:hover td { background: #f0f7ff; }
+  .badge { display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700; }
+  .footer { margin-top: 24px; font-size: 11px; color: #9ca3af; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 12px; }
+  @media print { body { padding: 12px; } }
+</style>
+</head>
+<body>
+  <h1>📊 Entry History Report</h1>
+  <p class="subtitle">Period: ${filterLabel} &nbsp;|&nbsp; Generated: ${format(new Date(), 'dd MMM yyyy, HH:mm')} &nbsp;|&nbsp; Total: ${entries.length} entries (${outward.length} Outward + ${inward.length} Inward)</p>
+
+  ${outward.length > 0 ? `
+  <div class="section-title outward-title">▲ Outward Entries (${outward.length})</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Material</th><th>Lot No.</th><th>Firm</th><th>Total Qty</th>
+        <th>Date Sold</th><th>Delivery Schedule</th><th>Final Delivery</th><th>Lot Applied</th>
+      </tr>
+    </thead>
+    <tbody>${renderOutwardRows()}</tbody>
+  </table>
+  ` : ''}
+
+  ${inward.length > 0 ? `
+  <div class="section-title inward-title">▼ Inward Entries (${inward.length})</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Material</th><th>Lot No.</th><th>Quantity</th><th>Date</th>
+        <th>Machine</th><th>Cover</th><th>RC Count</th><th>FC Count</th>
+      </tr>
+    </thead>
+    <tbody>${renderInwardRows()}</tbody>
+  </table>
+  ` : ''}
+
+  <div class="footer">Scrap Ledger — Printed on ${format(new Date(), 'dd MMM yyyy')}</div>
+  <script>window.onload = () => { window.print(); }</script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function EntryHistory() {
   const items = useLiveQuery(() => db.items.toArray());
@@ -36,6 +254,9 @@ export function EntryHistory() {
   const [editingEntry, setEditingEntry] = useState<InwardEntry | null>(null);
   const [editingOutwardEntry, setEditingOutwardEntry] = useState<OutwardEntry | null>(null);
   const [editingItem, setEditingItem] = useState<any>(null);
+
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   const unitMap = useMemo(() => new Map((units || []).map(u => [u.id, u.name])), [units]);
   const itemMap = useMemo(() => new Map((items || []).map(i => [i.id, i])), [items]);
@@ -60,11 +281,9 @@ export function EntryHistory() {
 
     let merged = [...inward, ...outward];
 
-    // Tab filter
     if (activeTab === 'inward') merged = merged.filter(e => e._type === 'INWARD');
     if (activeTab === 'outward') merged = merged.filter(e => e._type === 'OUTWARD');
 
-    // Date filter
     merged = merged.filter(entry => {
       const entryDate = parseISO(entry.date);
       if (filterType === 'daily') {
@@ -82,7 +301,6 @@ export function EntryHistory() {
       return true;
     });
 
-    // Search filter
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       merged = merged.filter(entry => {
@@ -94,7 +312,6 @@ export function EntryHistory() {
       });
     }
 
-    // Sort by date descending
     return merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [inwardEntries, outwardEntries, activeTab, filterType, selectedDate, selectedMonth, selectedYear, searchTerm, itemMap]);
 
@@ -113,6 +330,13 @@ export function EntryHistory() {
     };
   }, [inwardEntries, outwardEntries]);
 
+  // Filter label for export filename
+  const filterLabel = useMemo(() => {
+    if (filterType === 'daily') return format(parseISO(selectedDate), 'dd-MMM-yyyy');
+    if (filterType === 'monthly') return format(parseISO(selectedMonth + '-01'), 'MMM-yyyy');
+    return selectedYear;
+  }, [filterType, selectedDate, selectedMonth, selectedYear]);
+
   const handleDeleteInward = async (id: number) => {
     if (confirm('Kya aap is inward entry ko delete karna chahte hain?')) {
       await db.inwardEntries.delete(id);
@@ -123,6 +347,16 @@ export function EntryHistory() {
     if (confirm('Kya aap is outward entry ko delete karna chahte hain?')) {
       await db.outwardEntries.delete(id);
     }
+  };
+
+  const handleExportCSV = () => {
+    exportToCSV(combinedEntries, itemMap, unitMap, filterLabel);
+    setShowExportMenu(false);
+  };
+
+  const handleExportPDF = () => {
+    printAsPDF(combinedEntries, itemMap, unitMap, filterLabel);
+    setShowExportMenu(false);
   };
 
   if (!items || !units || !inwardEntries || !outwardEntries) {
@@ -146,6 +380,52 @@ export function EntryHistory() {
             Entry History
           </h2>
           <p className="font-body-md text-body-md text-on-surface-variant mt-1">Inward aur Outward ki poori history — ek jagah.</p>
+        </div>
+
+        {/* ── Export Button ──────────────────────────────────────────────────── */}
+        <div className="relative" ref={exportRef}>
+          <button
+            onClick={() => setShowExportMenu(v => !v)}
+            disabled={combinedEntries.length === 0}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-semibold text-sm rounded-xl shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
+          >
+            <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>download</span>
+            Export
+            <span className="material-symbols-outlined text-[16px]">{showExportMenu ? 'expand_less' : 'expand_more'}</span>
+          </button>
+
+          {showExportMenu && (
+            <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-xl shadow-2xl border border-outline-variant/20 z-50 overflow-hidden animate-fade-in">
+              <div className="px-3 py-2 bg-gray-50 border-b border-outline-variant/20">
+                <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Export Current View</p>
+                <p className="text-[10px] text-outline-variant">{combinedEntries.length} entries</p>
+              </div>
+              <button
+                onClick={handleExportPDF}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 transition-colors text-left group"
+              >
+                <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center group-hover:bg-red-200 transition-colors">
+                  <span className="material-symbols-outlined text-red-600 text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>picture_as_pdf</span>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-on-surface">Export PDF</p>
+                  <p className="text-[10px] text-outline">Print-ready format</p>
+                </div>
+              </button>
+              <button
+                onClick={handleExportCSV}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-emerald-50 transition-colors text-left group border-t border-outline-variant/10"
+              >
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center group-hover:bg-emerald-200 transition-colors">
+                  <span className="material-symbols-outlined text-emerald-600 text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>table_view</span>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-on-surface">Export Excel (CSV)</p>
+                  <p className="text-[10px] text-outline">Opens in Excel/Sheets</p>
+                </div>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -185,9 +465,7 @@ export function EntryHistory() {
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
-                  activeTab === tab.key
-                    ? 'bg-white shadow text-primary'
-                    : 'text-gray-500 hover:text-gray-700'
+                  activeTab === tab.key ? 'bg-white shadow text-primary' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
                 <span className="material-symbols-outlined text-[14px]">{tab.icon}</span>
@@ -230,9 +508,7 @@ export function EntryHistory() {
                 key={f.key}
                 onClick={() => setFilterType(f.key)}
                 className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                  filterType === f.key
-                    ? 'bg-white shadow text-primary'
-                    : 'text-gray-500 hover:text-gray-700'
+                  filterType === f.key ? 'bg-white shadow text-primary' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
                 {f.label}
@@ -324,16 +600,19 @@ export function EntryHistory() {
             const inwardRaw = !isOut ? (raw as InwardEntry) : null;
             const outwardRaw = isOut ? (raw as OutwardEntry) : null;
 
+            // Delivery schedule info for outward
+            const hasMultipleDeliveries = outwardRaw?.deliveries && outwardRaw.deliveries.length > 1;
+            const finalSlot = outwardRaw?.deliveries?.find(d => d.isFinal);
+            const finalDeliveryDate = finalSlot?.date || outwardRaw?.dateDelivered;
+
             return (
               <div
                 key={`${entry._type}-${entry.id}-${idx}`}
                 className={`glass-panel rounded-xl p-4 md:p-5 shadow-sm border-l-4 transition-all hover:shadow-md hover:-translate-y-[1px] group ${
-                  isOut
-                    ? 'border-l-violet-500'
-                    : 'border-l-emerald-500'
+                  isOut ? 'border-l-violet-500' : 'border-l-emerald-500'
                 }`}
               >
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
 
                   {/* Type Badge */}
                   <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center shadow-sm ${
@@ -350,9 +629,7 @@ export function EntryHistory() {
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <div>
                         <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mb-1 ${
-                          isOut
-                            ? 'bg-violet-100 text-violet-700'
-                            : 'bg-emerald-100 text-emerald-700'
+                          isOut ? 'bg-violet-100 text-violet-700' : 'bg-emerald-100 text-emerald-700'
                         }`}>
                           {isOut ? '▲ Outward' : '▼ Inward'}
                         </span>
@@ -417,6 +694,48 @@ export function EntryHistory() {
                         </>
                       )}
                     </div>
+
+                    {/* ── Delivery Schedule (Outward only) ───────────────────── */}
+                    {isOut && outwardRaw && (
+                      <div className="mt-3 pt-3 border-t border-outline-variant/15">
+                        <p className="text-[10px] font-bold text-outline uppercase tracking-wider mb-2 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]" style={{ fontVariationSettings: "'FILL' 1" }}>local_shipping</span>
+                          Delivery Schedule
+                        </p>
+
+                        {hasMultipleDeliveries ? (
+                          <div className="flex flex-wrap gap-2">
+                            {outwardRaw.deliveries!.map((d, di) => (
+                              <div
+                                key={di}
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                                  d.isFinal
+                                    ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-sm'
+                                    : 'bg-gray-50 border-gray-200 text-gray-600'
+                                }`}
+                              >
+                                {d.isFinal && (
+                                  <span className="material-symbols-outlined text-emerald-600 text-[12px]" style={{ fontVariationSettings: "'FILL' 1" }}>flag</span>
+                                )}
+                                <span className="font-data-mono">{formatDateSafe(d.date)}</span>
+                                <span className="font-bold">{d.quantity} {unitName}</span>
+                                {d.isFinal && (
+                                  <span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full font-bold tracking-wide">FINAL</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          // Single delivery (old format or single slot)
+                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border bg-emerald-100 border-emerald-300 text-emerald-800 w-fit">
+                            <span className="material-symbols-outlined text-emerald-600 text-[12px]" style={{ fontVariationSettings: "'FILL' 1" }}>flag</span>
+                            <span className="font-data-mono">{formatDateSafe(finalDeliveryDate)}</span>
+                            <span className="font-bold">{outwardRaw.quantity} {unitName}</span>
+                            <span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full font-bold tracking-wide">FINAL</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -469,6 +788,14 @@ export function EntryHistory() {
           onClose={() => { setEditingOutwardEntry(null); setEditingItem(null); }}
         />,
         document.body
+      )}
+
+      {/* Close export menu on outside click */}
+      {showExportMenu && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+          onClick={() => setShowExportMenu(false)}
+        />
       )}
     </div>
   );

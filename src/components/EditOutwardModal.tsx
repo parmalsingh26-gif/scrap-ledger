@@ -1,7 +1,21 @@
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { db, useLiveQuery, type OutwardEntry, type Item } from '../db/db';
+import { db, useLiveQuery, type OutwardEntry, type Item, type DeliverySlot } from '../db/db';
 import { CategoryBadge } from './CategoryBadge';
+
+const today = new Date().toISOString().split('T')[0];
+
+function emptyDelivery(): DeliverySlot {
+  return { date: today, quantity: 0, isFinal: false };
+}
+
+function initDeliveries(entry: OutwardEntry): DeliverySlot[] {
+  // If entry has deliveries array, use it; otherwise create one from old single dateDelivered
+  if (entry.deliveries && entry.deliveries.length > 0) {
+    return entry.deliveries;
+  }
+  return [{ date: entry.dateDelivered, quantity: entry.quantity, isFinal: true }];
+}
 
 export function EditOutwardModal({ 
   entry, 
@@ -15,36 +29,82 @@ export function EditOutwardModal({
   const categories = useLiveQuery(() => db.categories.toArray());
   const units = useLiveQuery(() => db.units.toArray());
 
-  const [quantity, setQuantity] = useState<string>(String(entry.quantity));
   const [unitId, setUnitId] = useState<string>(String(entry.unitId));
   const [lotNumber, setLotNumber] = useState<string>(entry.lotNumber);
   const [hsnCode, setHsnCode] = useState<string>(entry.hsnCode);
   const [firmName, setFirmName] = useState<string>(entry.firmName);
-  
-  // dateLotApplied is optional — may be empty string or undefined
   const [dateLotApplied, setDateLotApplied] = useState<string>(entry.dateLotApplied || '');
   const [dateSold, setDateSold] = useState<string>(entry.dateSold);
-  const [dateDelivered, setDateDelivered] = useState<string>(entry.dateDelivered);
   const [rcCount, setRcCount] = useState<string>(entry.rcCount ? String(entry.rcCount) : '');
   const [fcCount, setFcCount] = useState<string>(entry.fcCount ? String(entry.fcCount) : '');
   const isCoverItem = item.name.toLowerCase().includes('cover');
 
+  // ── Delivery Slots ────────────────────────────────────────────────────────
+  const [deliveries, setDeliveries] = useState<DeliverySlot[]>(initDeliveries(entry));
+
   const [isSaving, setIsSaving] = useState(false);
+
+  const selectedUnitName = useMemo(() => {
+    if (!units) return '';
+    return units.find(u => u.id === Number(unitId))?.name || '';
+  }, [unitId, units]);
+
+  const totalQty = useMemo(() =>
+    deliveries.reduce((sum, d) => sum + (Number(d.quantity) || 0), 0),
+  [deliveries]);
+
+  const finalDelivery = useMemo(() =>
+    deliveries.find(d => d.isFinal) || deliveries[deliveries.length - 1],
+  [deliveries]);
 
   const selectedCategory = useMemo(() => {
     if (!item || !categories) return null;
     return categories.find(c => c.id === item.categoryId) || null;
   }, [item, categories]);
 
+  // ── Delivery slot handlers ────────────────────────────────────────────────
+  const addDelivery = () => {
+    setDeliveries(prev => [...prev, { ...emptyDelivery(), isFinal: false }]);
+  };
+
+  const removeDelivery = (idx: number) => {
+    setDeliveries(prev => {
+      const next = prev.filter((_, i) => i !== idx);
+      if (next.length > 0 && !next.some(d => d.isFinal)) {
+        next[next.length - 1] = { ...next[next.length - 1], isFinal: true };
+      }
+      return next;
+    });
+  };
+
+  const updateDelivery = (idx: number, field: keyof DeliverySlot, value: any) => {
+    setDeliveries(prev => {
+      const next = prev.map((d, i) => i === idx ? { ...d, [field]: value } : d);
+      if (field === 'isFinal' && value === true) {
+        return next.map((d, i) => ({ ...d, isFinal: i === idx }));
+      }
+      return next;
+    });
+  };
+
   const handleSave = async (e: any) => {
     e.preventDefault();
-    // dateLotApplied is optional — don't block save if empty
-    if (!quantity || !unitId || !lotNumber || !hsnCode || !firmName || !dateSold || !dateDelivered) return;
+    if (!unitId || !lotNumber || !hsnCode || !firmName || !dateSold) return;
+    if (deliveries.length === 0 || deliveries.some(d => !d.date || !d.quantity)) {
+      alert('Sabhi delivery slots mein date aur quantity bharo.');
+      return;
+    }
+    if (!deliveries.some(d => d.isFinal)) {
+      alert('Ek delivery ko "Final" mark karo.');
+      return;
+    }
     
     setIsSaving(true);
     try {
+      const dateDelivered = finalDelivery?.date || deliveries[deliveries.length - 1].date;
+
       await db.outwardEntries.update(entry.id!, {
-        quantity: Number(quantity),
+        quantity: totalQty,
         unitId: Number(unitId),
         lotNumber,
         hsnCode,
@@ -52,6 +112,7 @@ export function EditOutwardModal({
         dateLotApplied: dateLotApplied || undefined,
         dateSold,
         dateDelivered,
+        deliveries,
         rcCount: rcCount ? Number(rcCount) : undefined,
         fcCount: fcCount ? Number(fcCount) : undefined,
       });
@@ -83,7 +144,7 @@ export function EditOutwardModal({
       <div style={{
         position: 'relative',
         width: '100%',
-        maxWidth: '600px',
+        maxWidth: '680px',
         maxHeight: '90vh',
         background: 'rgba(255,255,255,0.97)',
         borderRadius: '20px',
@@ -93,6 +154,7 @@ export function EditOutwardModal({
         display: 'flex',
         flexDirection: 'column',
       }}>
+        {/* Header */}
         <div className="px-6 py-4 border-b border-outline-variant/20 flex items-center justify-between bg-surface/50 flex-shrink-0">
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center border border-secondary/30">
@@ -119,19 +181,7 @@ export function EditOutwardModal({
                 </div>
               </div>
 
-              <div className="space-y-2 relative pt-2">
-                <input
-                  type="number" step="0.01" min="0"
-                  className="glass-input floating-input w-full rounded-xl py-3 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  placeholder="Quantity" id="edit-out-qty" required
-                />
-                <label htmlFor="edit-out-qty" className="floating-label absolute left-4 top-5 font-body-md text-body-md text-outline transition-all duration-200 pointer-events-none">
-                  Quantity <span className="text-error">*</span>
-                </label>
-              </div>
-
+              {/* Unit */}
               <div className="space-y-2 relative">
                 <div className="relative group pt-2">
                   <select
@@ -147,6 +197,19 @@ export function EditOutwardModal({
                   <label className="absolute left-4 -top-0.5 bg-surface/80 px-1 font-body-sm text-body-sm text-primary transition-all duration-200 pointer-events-none scale-85">
                     Unit <span className="text-error">*</span>
                   </label>
+                </div>
+              </div>
+
+              {/* Total Qty Display */}
+              <div className="flex items-center gap-2 pl-1">
+                <div className="flex items-center gap-2 px-3 py-2 bg-secondary/10 border border-secondary/30 rounded-xl">
+                  <span className="material-symbols-outlined text-secondary text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>scale</span>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-secondary/70 tracking-wide">Total Qty</p>
+                    <p className="font-data-mono font-bold text-secondary leading-tight">
+                      {totalQty > 0 ? `${totalQty} ${selectedUnitName}` : '—'}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -230,20 +293,102 @@ export function EditOutwardModal({
                   <span className="material-symbols-outlined text-[20px]">event_available</span>
                 </div>
               </div>
-              
-              <div className="space-y-2 relative pt-2 col-span-1 md:col-span-2">
-                <input
-                  type="date"
-                  className="glass-input floating-input w-full rounded-xl py-3 pl-12 pr-4 font-body-md text-body-md text-on-surface focus:outline-none"
-                  value={dateDelivered} onChange={(e) => setDateDelivered(e.target.value)} required
-                />
-                <label className="absolute left-12 -top-0.5 bg-surface/80 px-1 font-body-sm text-body-sm text-primary transition-all duration-200 pointer-events-none scale-85">
-                  Date Delivered <span className="text-error">*</span>
-                </label>
-                <div className="absolute left-4 top-5 pointer-events-none text-outline-variant">
-                  <span className="material-symbols-outlined text-[20px]">local_shipping</span>
-                </div>
+            </div>
+
+            {/* ── Delivery Schedule ──────────────────────────────────────────── */}
+            <div className="bg-gradient-to-br from-violet-50/80 to-indigo-50/80 border border-violet-200 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-sm font-bold text-violet-800 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>local_shipping</span>
+                  Delivery Schedule
+                </h4>
+                <span className="text-xs font-bold text-violet-700 bg-violet-100 border border-violet-300 px-2.5 py-1 rounded-lg">
+                  Total: {totalQty} {selectedUnitName}
+                </span>
               </div>
+
+              {/* Column Headers */}
+              <div className="grid grid-cols-[1fr_110px_90px_auto] gap-3 mb-2 px-1">
+                <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Date</p>
+                <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Quantity</p>
+                <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wider">Final?</p>
+                <p></p>
+              </div>
+
+              <div className="space-y-2">
+                {deliveries.map((slot, idx) => (
+                  <div
+                    key={idx}
+                    className={`grid grid-cols-[1fr_110px_90px_auto] gap-3 items-center p-2.5 rounded-lg border transition-all ${
+                      slot.isFinal ? 'bg-emerald-50 border-emerald-300' : 'bg-white/80 border-outline-variant/30'
+                    }`}
+                  >
+                    <input
+                      type="date"
+                      value={slot.date}
+                      onChange={e => updateDelivery(idx, 'date', e.target.value)}
+                      className="w-full glass-input rounded-lg py-2 px-3 text-sm text-on-surface focus:outline-none"
+                      required
+                    />
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={slot.quantity || ''}
+                      onChange={e => updateDelivery(idx, 'quantity', Number(e.target.value))}
+                      placeholder="Qty"
+                      className="w-full glass-input rounded-lg py-2 px-3 text-sm font-data-mono text-on-surface focus:outline-none"
+                      required
+                    />
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                      <div className="relative flex-shrink-0">
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={slot.isFinal}
+                          onChange={e => updateDelivery(idx, 'isFinal', e.target.checked)}
+                        />
+                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+                          slot.isFinal ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-gray-300 hover:border-violet-400'
+                        }`}>
+                          {slot.isFinal && <span className="material-symbols-outlined text-white text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>check</span>}
+                        </div>
+                      </div>
+                      {slot.isFinal && <span className="text-[10px] font-bold text-emerald-700">🏁</span>}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeDelivery(idx)}
+                      disabled={deliveries.length === 1}
+                      className="p-1.5 text-outline hover:text-error rounded-lg hover:bg-error/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">delete</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={addDelivery}
+                className="mt-3 w-full py-2 border-2 border-dashed border-violet-300 rounded-lg text-xs font-semibold text-violet-600 hover:bg-violet-50 hover:border-violet-400 transition-all flex items-center justify-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                Add Another Delivery Date
+              </button>
+
+              {/* Summary Pills */}
+              {deliveries.length > 1 && (
+                <div className="mt-3 pt-3 border-t border-violet-200 flex flex-wrap gap-2">
+                  {deliveries.map((d, i) => (
+                    <div key={i} className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+                      d.isFinal ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-white border-gray-200 text-gray-600'
+                    }`}>
+                      {d.isFinal && <span>🏁</span>}
+                      <span>{d.date ? new Date(d.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}</span>
+                      <span className="font-data-mono">{d.quantity || 0} {selectedUnitName}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* RC/FC section for cover items */}

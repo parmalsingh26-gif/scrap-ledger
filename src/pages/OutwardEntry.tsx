@@ -1,10 +1,17 @@
 import React, { useState, useMemo } from 'react';
-import { db, useLiveQuery } from '../db/db';
+import { db, useLiveQuery, type DeliverySlot } from '../db/db';
 import { CategoryBadge } from '../components/CategoryBadge';
 import { ProtectedView } from '../components/ProtectedView';
+import { QRScannerModal } from '../components/QRScannerModal';
 import { useNavigate } from 'react-router-dom';
 
 const GST_RATES = [0, 5, 12, 18];
+
+const today = new Date().toISOString().split('T')[0];
+
+function emptyDelivery(): DeliverySlot {
+  return { date: today, quantity: 0, isFinal: false };
+}
 
 export function OutwardEntry() {
   const items = useLiveQuery(() => db.items.toArray());
@@ -20,7 +27,6 @@ export function OutwardEntry() {
   const [lotNumber, setLotNumber] = useState<string>('');
   const [hsnCode, setHsnCode] = useState<string>('');
   const [hsnAutoFilled, setHsnAutoFilled] = useState(false);
-  const [quantity, setQuantity] = useState<string>('');
   const [unitId, setUnitId] = useState<string>('');
   const [firmName, setFirmName] = useState<string>('');
   const [firmInput, setFirmInput] = useState<string>('');
@@ -33,12 +39,17 @@ export function OutwardEntry() {
   const [rate, setRate] = useState<string>('');
   const [gstRate, setGstRate] = useState<number>(0);
 
-  const today = new Date().toISOString().split('T')[0];
   const [dateLotApplied, setDateLotApplied] = useState<string>('');
   const [dateSold, setDateSold] = useState<string>(today);
-  const [dateDelivered, setDateDelivered] = useState<string>(today);
+
+  // ── Multiple Delivery Slots ───────────────────────────────────────────────
+  const [deliveries, setDeliveries] = useState<DeliverySlot[]>([{ ...emptyDelivery(), isFinal: true }]);
 
   const [status, setStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  // ── QR Scanner ────────────────────────────────────────────────────────────
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [scanAutoFillMsg, setScanAutoFillMsg] = useState<string | null>(null);
 
   const unitMap = useMemo(() => new Map((units || []).map(u => [u.id, u.name])), [units]);
 
@@ -52,8 +63,6 @@ export function OutwardEntry() {
   const stockInfo = useMemo(() => {
     if (!selectedItemId || !inwardEntries || !outwardEntries || !units) return null;
     const itemId = Number(selectedItemId);
-
-    // group by unit
     const inByUnit: Record<number, number> = {};
     inwardEntries.filter(e => e.itemId === itemId).forEach(e => {
       inByUnit[e.unitId] = (inByUnit[e.unitId] || 0) + e.quantity;
@@ -62,8 +71,6 @@ export function OutwardEntry() {
     outwardEntries.filter(e => e.itemId === itemId).forEach(e => {
       outByUnit[e.unitId] = (outByUnit[e.unitId] || 0) + e.quantity;
     });
-
-    // find common units
     const results: { unitName: string; balance: number }[] = [];
     Object.keys(inByUnit).forEach(uid => {
       const u = Number(uid);
@@ -73,15 +80,20 @@ export function OutwardEntry() {
     return results.length > 0 ? results : null;
   }, [selectedItemId, inwardEntries, outwardEntries, unitMap]);
 
+  // ── Total quantity from deliveries ────────────────────────────────────────
+  const totalQtyFromDeliveries = useMemo(() => {
+    return deliveries.reduce((sum, d) => sum + (Number(d.quantity) || 0), 0);
+  }, [deliveries]);
+
   // ── Rate × Amount calculation ─────────────────────────────────────────────
   const amountCalc = useMemo(() => {
-    const qty = Number(quantity);
+    const qty = totalQtyFromDeliveries;
     const r = Number(rate);
     if (!qty || !r) return null;
     const baseAmount = qty * r;
     const gstAmount = (baseAmount * gstRate) / 100;
     return { baseAmount, gstAmount, grandTotal: baseAmount + gstAmount };
-  }, [quantity, rate, gstRate]);
+  }, [totalQtyFromDeliveries, rate, gstRate]);
 
   const selectedItem = useMemo(() => {
     if (!selectedItemId || !items) return null;
@@ -102,8 +114,8 @@ export function OutwardEntry() {
   const isCoverItem = (selectedItem?.name || '').toLowerCase().includes('cover');
 
   const calcWeightMT = () => {
-    if (!isNosUnit || !quantity || !weightPerNos) return null;
-    return ((Number(quantity) * Number(weightPerNos)) / 1000).toFixed(3);
+    if (!isNosUnit || !totalQtyFromDeliveries || !weightPerNos) return null;
+    return ((totalQtyFromDeliveries * Number(weightPerNos)) / 1000).toFixed(3);
   };
 
   const filteredFirms = useMemo(() => {
@@ -115,58 +127,120 @@ export function OutwardEntry() {
   const handleItemChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedItemId(val);
-    if (!val || !items) {
-      setHsnAutoFilled(false);
-      return;
-    }
+    if (!val || !items) { setHsnAutoFilled(false); return; }
     const item = items.find(i => i.id === Number(val));
-    if (item?.hsnCode) {
-      setHsnCode(item.hsnCode);
-      setHsnAutoFilled(true);
-    } else {
-      setHsnCode('');
-      setHsnAutoFilled(false);
-    }
+    if (item?.hsnCode) { setHsnCode(item.hsnCode); setHsnAutoFilled(true); }
+    else { setHsnCode(''); setHsnAutoFilled(false); }
   };
 
   const handleFirmSelect = (name: string) => {
-    setFirmName(name);
-    setFirmInput(name);
-    setShowFirmDropdown(false);
+    setFirmName(name); setFirmInput(name); setShowFirmDropdown(false);
   };
 
   const handleFirmInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
-    setFirmInput(val);
-    setFirmName(val);
+    setFirmInput(val); setFirmName(val);
     setShowFirmDropdown(val.length > 0);
   };
+
+  // ── QR Scan Auto-Fill ─────────────────────────────────────────────────────
+  const handleScanSuccess = (scannedText: string) => {
+    // 1. Set Lot Number from scan
+    setLotNumber(scannedText);
+    setScanAutoFillMsg(null);
+
+    if (!inwardEntries || !items) return;
+
+    // 2. Find matching inward entry by Lot Number
+    const match = inwardEntries.find(
+      e => e.lotNumber?.trim().toUpperCase() === scannedText.trim().toUpperCase()
+    );
+
+    if (match) {
+      // 3. Auto-fill Item
+      setSelectedItemId(String(match.itemId));
+      // 4. Auto-fill Unit
+      setUnitId(String(match.unitId));
+      // 5. Auto-fill HSN from item master
+      const matchedItem = items.find(i => i.id === match.itemId);
+      if (matchedItem?.hsnCode) {
+        setHsnCode(matchedItem.hsnCode);
+        setHsnAutoFilled(true);
+      }
+      const itemName = matchedItem?.name || 'Item';
+      const unitName = unitMap.get(match.unitId) || '';
+      setScanAutoFillMsg(`✅ Lot "${scannedText}" mila! ${itemName} (${match.quantity} ${unitName}) — Inward: ${match.date}`);
+    } else {
+      setScanAutoFillMsg(`⚠️ Lot "${scannedText}" kisi inward entry se match nahi hua. Manually select karo.`);
+    }
+    setTimeout(() => setScanAutoFillMsg(null), 6000);
+  };
+
+  // ── Delivery slot handlers ────────────────────────────────────────────────
+  const addDelivery = () => {
+    setDeliveries(prev => [...prev, { ...emptyDelivery(), isFinal: false }]);
+  };
+
+  const removeDelivery = (idx: number) => {
+    setDeliveries(prev => {
+      const next = prev.filter((_, i) => i !== idx);
+      // ensure at least one final
+      if (next.length > 0 && !next.some(d => d.isFinal)) {
+        next[next.length - 1] = { ...next[next.length - 1], isFinal: true };
+      }
+      return next;
+    });
+  };
+
+  const updateDelivery = (idx: number, field: keyof DeliverySlot, value: any) => {
+    setDeliveries(prev => {
+      const next = prev.map((d, i) => i === idx ? { ...d, [field]: value } : d);
+      // isFinal is exclusive — ek hi final ho
+      if (field === 'isFinal' && value === true) {
+        return next.map((d, i) => ({ ...d, isFinal: i === idx }));
+      }
+      return next;
+    });
+  };
+
+  const finalDelivery = useMemo(() => deliveries.find(d => d.isFinal) || deliveries[deliveries.length - 1], [deliveries]);
 
   if (!items || !categories || !units) return null;
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
-    if (!selectedItemId || !lotNumber || !hsnCode || !quantity || !unitId || !firmName) {
+    if (!selectedItemId || !lotNumber || !hsnCode || !unitId || !firmName) {
       setStatus({ type: 'error', msg: 'Please fill in all required fields.' });
+      return;
+    }
+    if (deliveries.length === 0 || deliveries.some(d => !d.date || !d.quantity)) {
+      setStatus({ type: 'error', msg: 'Sabhi delivery slots mein date aur quantity bharo.' });
+      return;
+    }
+    if (!deliveries.some(d => d.isFinal)) {
+      setStatus({ type: 'error', msg: 'Ek delivery ko "Final" mark karo.' });
       return;
     }
 
     try {
-      // Auto-save new firm name to master list
       if (firmMasters && !firmMasters.find(f => f.name.toLowerCase() === firmName.toLowerCase())) {
         await db.firmMasters.add({ name: firmName });
       }
+
+      // dateDelivered = final delivery ki date (backward compat)
+      const dateDelivered = finalDelivery?.date || deliveries[deliveries.length - 1].date;
 
       const entryData: any = {
         itemId: Number(selectedItemId),
         lotNumber,
         hsnCode,
-        quantity: Number(quantity),
+        quantity: totalQtyFromDeliveries,
         unitId: Number(unitId),
         firmName,
         dateLotApplied: dateLotApplied || undefined,
         dateSold,
         dateDelivered,
+        deliveries,
       };
 
       if (isNosUnit && weightPerNos) entryData.weightPerNos = Number(weightPerNos);
@@ -177,33 +251,20 @@ export function OutwardEntry() {
 
       await db.outwardEntries.add(entryData);
 
-      // ── Auto-save HSN to item master ──────────────────────────────────────
+      // Auto-save HSN to item master
       const selectedItemObj = items?.find(i => i.id === Number(selectedItemId));
       if (selectedItemObj && hsnCode && selectedItemObj.hsnCode !== hsnCode) {
-        try {
-          await db.items.update(Number(selectedItemId), { ...selectedItemObj, hsnCode });
-        } catch { /* silent */ }
+        try { await db.items.update(Number(selectedItemId), { ...selectedItemObj, hsnCode }); } catch { }
       }
 
       const hsnMsg = selectedItemObj && selectedItemObj.hsnCode !== hsnCode ? ' HSN bhi save ho gaya!' : '';
       setStatus({ type: 'success', msg: `✅ Outward entry recorded successfully!${hsnMsg}` });
 
-      setSelectedItemId('');
-      setLotNumber('');
-      setHsnCode('');
-      setHsnAutoFilled(false);
-      setQuantity('');
-      setUnitId('');
-      setFirmName('');
-      setFirmInput('');
-      setWeightPerNos('');
-      setRcCount('');
-      setFcCount('');
-      setRate('');
-      setGstRate(0);
-      setDateLotApplied('');
-      setDateSold(today);
-      setDateDelivered(today);
+      setSelectedItemId(''); setLotNumber(''); setHsnCode(''); setHsnAutoFilled(false);
+      setUnitId(''); setFirmName(''); setFirmInput('');
+      setWeightPerNos(''); setRcCount(''); setFcCount('');
+      setRate(''); setGstRate(0); setDateLotApplied(''); setDateSold(today);
+      setDeliveries([{ ...emptyDelivery(), isFinal: true }]);
       setTimeout(() => setStatus(null), 4000);
     } catch (err) {
       setStatus({ type: 'error', msg: 'Failed to record entry.' });
@@ -292,9 +353,7 @@ export function OutwardEntry() {
               {selectedItemId && stockInfo && (
                 <div className="col-span-1 md:col-span-2">
                   <div className={`rounded-xl p-3 border flex items-center gap-3 flex-wrap ${
-                    stockInfo.every(s => s.balance >= 0)
-                      ? 'bg-emerald-50 border-emerald-200'
-                      : 'bg-red-50 border-red-200'
+                    stockInfo.every(s => s.balance >= 0) ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'
                   }`}>
                     <span className={`material-symbols-outlined text-[22px] flex-shrink-0 ${stockInfo.every(s => s.balance >= 0) ? 'text-emerald-600' : 'text-red-600'}`}
                       style={{ fontVariationSettings: "'FILL' 1" }}>
@@ -331,21 +390,48 @@ export function OutwardEntry() {
                 Sales Details
               </h3>
 
+              {/* ── QR Scan Auto-fill Message ───────────────────────────────── */}
+              {scanAutoFillMsg && (
+                <div className={`col-span-1 md:col-span-3 px-4 py-3 rounded-xl border text-sm font-medium flex items-start gap-2 ${
+                  scanAutoFillMsg.startsWith('✅')
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-amber-50 border-amber-200 text-amber-800'
+                }`}>
+                  <span className="material-symbols-outlined text-[18px] mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>
+                    {scanAutoFillMsg.startsWith('✅') ? 'check_circle' : 'warning'}
+                  </span>
+                  <span>{scanAutoFillMsg}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Lot Number */}
+                {/* Lot Number + QR Scan Button */}
                 <div className="space-y-2 relative pt-2">
-                  <input
-                    type="text"
-                    className="glass-input floating-input w-full rounded-xl py-3 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent uppercase"
-                    value={lotNumber}
-                    onChange={(e) => setLotNumber(e.target.value)}
-                    placeholder="Lot Number"
-                    id="outward-lot"
-                    required
-                  />
-                  <label htmlFor="outward-lot" className="floating-label absolute left-4 top-5 font-body-md text-body-md text-outline transition-all duration-200 pointer-events-none">
-                    Lot Number <span className="text-error">*</span>
-                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        className="glass-input floating-input w-full rounded-xl py-3 pl-4 pr-12 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent uppercase"
+                        value={lotNumber}
+                        onChange={(e) => { setLotNumber(e.target.value); setScanAutoFillMsg(null); }}
+                        placeholder="Lot Number"
+                        id="outward-lot"
+                        required
+                      />
+                      <label htmlFor="outward-lot" className="floating-label absolute left-4 top-5 font-body-md text-body-md text-outline transition-all duration-200 pointer-events-none">
+                        Lot Number <span className="text-error">*</span>
+                      </label>
+                    </div>
+                    {/* QR / Barcode Scan Button */}
+                    <button
+                      type="button"
+                      onClick={() => setShowQRScanner(true)}
+                      title="QR / Barcode Scan karo"
+                      className="flex-shrink-0 w-12 h-12 mt-0.5 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[22px]" style={{ fontVariationSettings: "'FILL' 1" }}>qr_code_scanner</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* HSN Code */}
@@ -408,23 +494,8 @@ export function OutwardEntry() {
                 </div>
               </div>
 
-              {/* Quantity + Unit */}
+              {/* Unit */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 pt-6 border-t border-outline-variant/20">
-                <div className="space-y-2 relative pt-2">
-                  <input
-                    type="number" step="0.01" min="0"
-                    className="glass-input floating-input w-full rounded-xl py-3 px-4 font-body-md text-body-md text-on-surface focus:outline-none placeholder-transparent"
-                    value={quantity}
-                    onChange={(e) => setQuantity(e.target.value)}
-                    placeholder="Quantity"
-                    id="outward-qty"
-                    required
-                  />
-                  <label htmlFor="outward-qty" className="floating-label absolute left-4 top-5 font-body-md text-body-md text-outline transition-all duration-200 pointer-events-none">
-                    Quantity Sold <span className="text-error">*</span>
-                  </label>
-                </div>
-
                 <div className="space-y-2 relative">
                   <div className="relative group pt-2">
                     <select
@@ -448,6 +519,20 @@ export function OutwardEntry() {
                       Unit <span className="text-error">*</span>
                     </label>
                   </div>
+                </div>
+
+                {/* Total Qty Display */}
+                <div className="flex items-center gap-3 pl-2">
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-secondary/10 border border-secondary/30 rounded-xl">
+                    <span className="material-symbols-outlined text-secondary text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>scale</span>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase text-secondary/70 tracking-wide">Total Quantity</p>
+                      <p className="font-data-mono font-bold text-secondary text-lg leading-tight">
+                        {totalQtyFromDeliveries > 0 ? `${totalQtyFromDeliveries} ${selectedUnitName}` : '—'}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-outline">Auto-calculated from deliveries below</p>
                 </div>
               </div>
 
@@ -490,7 +575,6 @@ export function OutwardEntry() {
                   <span className="text-indigo-400 font-normal">(optional)</span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {/* Rate */}
                   <div className="relative pt-2">
                     <input
                       type="number" step="0.01" min="0"
@@ -506,7 +590,6 @@ export function OutwardEntry() {
                     <div className="absolute left-3 top-5 pointer-events-none text-indigo-400 font-bold text-sm">₹</div>
                   </div>
 
-                  {/* GST Rate */}
                   <div className="relative">
                     <div className="relative group pt-2">
                       <select
@@ -525,7 +608,6 @@ export function OutwardEntry() {
                     </div>
                   </div>
 
-                  {/* Calculated Result */}
                   {amountCalc ? (
                     <div className="flex flex-col gap-1 bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-3">
                       <div className="flex justify-between text-xs text-indigo-600">
@@ -597,7 +679,7 @@ export function OutwardEntry() {
             )}
 
             {/* Section 3: Timelines */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
               <div className="space-y-2 relative pt-2">
                 <input type="date"
                   className="glass-input floating-input w-full rounded-xl py-3 pl-12 pr-4 font-body-md text-body-md text-on-surface focus:outline-none"
@@ -628,18 +710,140 @@ export function OutwardEntry() {
                   <span className="material-symbols-outlined text-[20px]">gavel</span>
                 </div>
               </div>
-              <div className="space-y-2 relative pt-2">
-                <input type="date"
-                  className="glass-input floating-input w-full rounded-xl py-3 pl-12 pr-4 font-body-md text-body-md text-on-surface focus:outline-none"
-                  value={dateDelivered} onChange={(e) => setDateDelivered(e.target.value)} required
-                />
-                <label className="absolute left-12 -top-0.5 bg-surface/80 px-1 font-body-sm text-body-sm text-primary scale-85 pointer-events-none">
-                  Date Delivered <span className="text-error">*</span>
-                </label>
-                <div className="absolute left-4 top-5 pointer-events-none text-outline-variant">
-                  <span className="material-symbols-outlined text-[20px]">local_shipping</span>
+            </div>
+
+            {/* ── Section 4: Delivery Schedule ─────────────────────────────────── */}
+            <div className="bg-gradient-to-br from-violet-50/60 to-indigo-50/60 border border-violet-200 rounded-2xl p-6 relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-violet-500 to-indigo-500 rounded-l-2xl"></div>
+
+              {/* Header */}
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h3 className="font-label-md text-label-md text-on-surface flex items-center gap-2">
+                    <span className="material-symbols-outlined text-violet-600 text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>local_shipping</span>
+                    Delivery Schedule
+                    <span className="text-xs font-normal text-violet-500 ml-1">— Jis din kuch bhi gaya, add karo</span>
+                  </h3>
+                  <p className="text-xs text-outline mt-0.5 ml-7">
+                    Ek lot ki delivery alag alag dates mein ho sakti hai. Final delivery ko ✅ mark karo.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-violet-100 border border-violet-300 rounded-lg">
+                  <span className="material-symbols-outlined text-violet-600 text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>scale</span>
+                  <span className="text-xs font-bold text-violet-700">Total: {totalQtyFromDeliveries} {selectedUnitName || 'unit'}</span>
                 </div>
               </div>
+
+              {/* Column Headers */}
+              <div className="grid grid-cols-[1fr_120px_100px_auto] gap-3 mb-2 px-1">
+                <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Date</p>
+                <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Quantity</p>
+                <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wider flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[12px]">flag</span>Final?
+                </p>
+                <p></p>
+              </div>
+
+              {/* Delivery Rows */}
+              <div className="space-y-3">
+                {deliveries.map((slot, idx) => (
+                  <div
+                    key={idx}
+                    className={`grid grid-cols-[1fr_120px_100px_auto] gap-3 items-center p-3 rounded-xl border transition-all ${
+                      slot.isFinal
+                        ? 'bg-emerald-50 border-emerald-300 shadow-sm'
+                        : 'bg-white/70 border-outline-variant/30'
+                    }`}
+                  >
+                    {/* Date */}
+                    <div className="relative">
+                      <input
+                        type="date"
+                        value={slot.date}
+                        onChange={e => updateDelivery(idx, 'date', e.target.value)}
+                        className="w-full glass-input rounded-lg py-2 px-3 text-sm text-on-surface focus:outline-none"
+                        required
+                      />
+                    </div>
+
+                    {/* Quantity */}
+                    <div className="relative">
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={slot.quantity || ''}
+                        onChange={e => updateDelivery(idx, 'quantity', Number(e.target.value))}
+                        placeholder="Qty"
+                        className="w-full glass-input rounded-lg py-2 px-3 text-sm font-data-mono text-on-surface focus:outline-none"
+                        required
+                      />
+                    </div>
+
+                    {/* Final checkbox */}
+                    <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer select-none group">
+                        <div className="relative">
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={slot.isFinal}
+                            onChange={e => updateDelivery(idx, 'isFinal', e.target.checked)}
+                          />
+                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+                            slot.isFinal
+                              ? 'bg-emerald-500 border-emerald-500'
+                              : 'bg-white border-outline-variant/60 group-hover:border-violet-400'
+                          }`}>
+                            {slot.isFinal && <span className="material-symbols-outlined text-white text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>check</span>}
+                          </div>
+                        </div>
+                        {slot.isFinal && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full border border-emerald-300 whitespace-nowrap">
+                            🏁 Final
+                          </span>
+                        )}
+                      </label>
+                    </div>
+
+                    {/* Remove button */}
+                    <button
+                      type="button"
+                      onClick={() => removeDelivery(idx)}
+                      disabled={deliveries.length === 1}
+                      className="p-1.5 text-outline hover:text-error rounded-lg hover:bg-error/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Remove delivery"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add Delivery Button */}
+              <button
+                type="button"
+                onClick={addDelivery}
+                className="mt-4 w-full py-2.5 border-2 border-dashed border-violet-300 rounded-xl text-sm font-semibold text-violet-600 hover:bg-violet-50 hover:border-violet-400 transition-all flex items-center justify-center gap-2"
+              >
+                <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                Add Another Delivery Date
+              </button>
+
+              {/* Summary strip */}
+              {deliveries.length > 1 && (
+                <div className="mt-4 pt-4 border-t border-violet-200 flex flex-wrap gap-2">
+                  {deliveries.map((d, i) => (
+                    <div key={i} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                      d.isFinal
+                        ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                        : 'bg-white border-outline-variant/40 text-on-surface-variant'
+                    }`}>
+                      {d.isFinal && <span className="text-emerald-600">🏁</span>}
+                      <span>{d.date ? new Date(d.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}</span>
+                      <span className="font-data-mono font-bold">{d.quantity || 0} {selectedUnitName}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="pt-6 border-t border-outline-variant/20 flex justify-end">
@@ -654,6 +858,14 @@ export function OutwardEntry() {
           </form>
         </div>
       </div>
+
+      {/* QR Scanner Modal */}
+      {showQRScanner && (
+        <QRScannerModal
+          onScanSuccess={handleScanSuccess}
+          onClose={() => setShowQRScanner(false)}
+        />
+      )}
     </ProtectedView>
   );
 }

@@ -108,6 +108,44 @@ export function TotalScrapPosition() {
   const [activeTab, setActiveTab] = useState<'overview' | 'monthly' | 'pending' | 'converter'>('overview');
   const [selectedCatId, setSelectedCatId] = useState<number | 'all'>('all');
 
+  // ── Monthly Inward Manual Overrides (persisted in localStorage) ────────────
+  // Key: YYYY-MM, Value: manual inwardMT override
+  const LS_KEY = 'tsp_monthly_inward_overrides';
+  const [monthlyOverrides, setMonthlyOverrides] = useState<Record<string, number>>(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
+
+  // Inline edit state: which month is being edited and its draft value
+  const [editingMonth, setEditingMonth] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<string>('');
+
+  const saveOverride = (ym: string, value: string) => {
+    const num = parseFloat(value);
+    setMonthlyOverrides(prev => {
+      const next = { ...prev };
+      if (isNaN(num) || value.trim() === '') {
+        delete next[ym]; // revert to auto
+      } else {
+        next[ym] = num;
+      }
+      localStorage.setItem(LS_KEY, JSON.stringify(next));
+      return next;
+    });
+    setEditingMonth(null);
+  };
+
+  const resetOverride = (ym: string) => {
+    setMonthlyOverrides(prev => {
+      const next = { ...prev };
+      delete next[ym];
+      localStorage.setItem(LS_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
   const barChartRef = useRef<HTMLCanvasElement>(null);
   const pieChartRef = useRef<HTMLCanvasElement>(null);
   const chartInstances = useRef<Record<string, Chart>>({});
@@ -229,6 +267,7 @@ export function TotalScrapPosition() {
         ym,
         label,
         inwardMT: +inwardMT.toFixed(3),
+        inwardMT_auto: +inwardMT.toFixed(3), // always raw auto-calculated
         outwardMT: +outwardMT.toFixed(3),
         netMT: +netMT.toFixed(3),
         inwardCount: iEntries.length,
@@ -238,6 +277,18 @@ export function TotalScrapPosition() {
       };
     });
   }, [inwardEntries, outwardEntries, units, unitMap]);
+
+  // Apply overrides on top of raw monthly data
+  const monthlyDataWithOverrides = useMemo(() => {
+    return monthlyData.map(m => {
+      const override = monthlyOverrides[m.ym];
+      if (override !== undefined) {
+        const newNet = override - m.outwardMT;
+        return { ...m, inwardMT: override, netMT: +newNet.toFixed(3), isOverridden: true };
+      }
+      return { ...m, isOverridden: false };
+    });
+  }, [monthlyData, monthlyOverrides]);
 
   // ── Pending entries audit ─────────────────────────────────────────────────
   const pendingEntries = useMemo(() => {
@@ -531,21 +582,21 @@ export function TotalScrapPosition() {
                 {[
                   {
                     label: 'Total Inward (All Months)',
-                    value: fmtNum(monthlyData.reduce((a, m) => a + m.inwardMT, 0), 2) + ' MT',
+                    value: fmtNum(monthlyDataWithOverrides.reduce((a, m) => a + m.inwardMT, 0), 2) + ' MT',
                     icon: 'arrow_downward', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200'
                   },
                   {
                     label: 'Total Outward (All Months)',
-                    value: fmtNum(monthlyData.reduce((a, m) => a + m.outwardMT, 0), 2) + ' MT',
+                    value: fmtNum(monthlyDataWithOverrides.reduce((a, m) => a + m.outwardMT, 0), 2) + ' MT',
                     icon: 'arrow_upward', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200'
                   },
                   {
                     label: 'Net Balance (All Months)',
-                    value: (() => { const n = monthlyData.reduce((a, m) => a + m.netMT, 0); return (n >= 0 ? '+' : '') + fmtNum(n, 2) + ' MT'; })(),
+                    value: (() => { const n = monthlyDataWithOverrides.reduce((a, m) => a + m.netMT, 0); return (n >= 0 ? '+' : '') + fmtNum(n, 2) + ' MT'; })(),
                     icon: 'scale',
-                    color: monthlyData.reduce((a, m) => a + m.netMT, 0) >= 0 ? 'text-emerald-600' : 'text-red-600',
-                    bg: monthlyData.reduce((a, m) => a + m.netMT, 0) >= 0 ? 'bg-emerald-50' : 'bg-red-50',
-                    border: monthlyData.reduce((a, m) => a + m.netMT, 0) >= 0 ? 'border-emerald-200' : 'border-red-200'
+                    color: monthlyDataWithOverrides.reduce((a, m) => a + m.netMT, 0) >= 0 ? 'text-emerald-600' : 'text-red-600',
+                    bg: monthlyDataWithOverrides.reduce((a, m) => a + m.netMT, 0) >= 0 ? 'bg-emerald-50' : 'bg-red-50',
+                    border: monthlyDataWithOverrides.reduce((a, m) => a + m.netMT, 0) >= 0 ? 'border-emerald-200' : 'border-red-200'
                   },
                 ].map((k, i) => (
                   <div key={i} className={`flex items-center gap-3 rounded-xl p-3 border ${k.border} ${k.bg}`}>
@@ -564,7 +615,12 @@ export function TotalScrapPosition() {
                   <thead>
                     <tr className="border-b border-outline-variant/20 bg-surface-variant/30">
                       <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Month</th>
-                      <th className="px-5 py-3 text-xs font-semibold text-blue-600 uppercase tracking-wide text-right">Inward (MT)</th>
+                      <th className="px-5 py-3 text-xs font-semibold text-blue-600 uppercase tracking-wide text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          Inward (MT)
+                          <span className="text-[9px] bg-amber-100 text-amber-700 border border-amber-300 px-1.5 py-0.5 rounded-full font-bold tracking-wide">✏️ Editable</span>
+                        </div>
+                      </th>
                       <th className="px-5 py-3 text-xs font-semibold text-amber-600 uppercase tracking-wide text-right">Outward (MT)</th>
                       <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Net Balance (MT)</th>
                       <th className="px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide text-right">Inward Entries</th>
@@ -573,19 +629,91 @@ export function TotalScrapPosition() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...monthlyData].reverse().map((m, i) => {
-                      const maxMT = Math.max(...monthlyData.map(x => x.inwardMT), 1);
+                    {[...monthlyDataWithOverrides].reverse().map((m, i) => {
+                      const maxMT = Math.max(...monthlyDataWithOverrides.map(x => x.inwardMT), 1);
                       const inPct = Math.min(100, (m.inwardMT / maxMT) * 100);
                       const outPct = Math.min(100, (m.outwardMT / maxMT) * 100);
                       const isPositive = m.netMT >= 0;
+                      const isEditing = editingMonth === m.ym;
+
                       return (
-                        <tr key={m.ym} className={`border-b border-outline-variant/10 hover:bg-gray-50/60 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
+                        <tr key={m.ym} className={`border-b border-outline-variant/10 hover:bg-blue-50/30 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
                           <td className="px-5 py-3">
-                            <span className="font-semibold text-sm text-gray-800">{m.label}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-sm text-gray-800">{m.label}</span>
+                              {m.isOverridden && (
+                                <span className="text-[9px] bg-amber-100 text-amber-700 border border-amber-300 px-1.5 py-0.5 rounded-full font-bold">✏️ Manual</span>
+                              )}
+                            </div>
                           </td>
+
+                          {/* ── Editable Inward Cell ──────────────────────── */}
                           <td className="px-5 py-3 text-right">
-                            <span className="text-sm font-semibold text-blue-700">{m.inwardMT > 0 ? fmtNum(m.inwardMT, 3) : '—'}</span>
+                            {isEditing ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <input
+                                  autoFocus
+                                  type="number"
+                                  step="0.001"
+                                  value={editDraft}
+                                  onChange={e => setEditDraft(e.target.value)}
+                                  onBlur={() => saveOverride(m.ym, editDraft)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveOverride(m.ym, editDraft);
+                                    if (e.key === 'Escape') setEditingMonth(null);
+                                  }}
+                                  className="w-24 text-right text-sm font-bold text-blue-700 bg-blue-50 border-2 border-blue-400 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                  placeholder="MT"
+                                />
+                                <button
+                                  onMouseDown={() => saveOverride(m.ym, editDraft)}
+                                  className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                                  title="Save"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">check</span>
+                                </button>
+                                <button
+                                  onMouseDown={() => setEditingMonth(null)}
+                                  className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                                  title="Cancel"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">close</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-end gap-2 group/cell">
+                                <div className="text-right">
+                                  <span className={`text-sm font-semibold ${m.isOverridden ? 'text-amber-700' : 'text-blue-700'}`}>
+                                    {m.inwardMT > 0 ? fmtNum(m.inwardMT, 3) : '—'}
+                                  </span>
+                                  {m.isOverridden && (
+                                    <div className="text-[10px] text-gray-400 line-through">
+                                      Auto: {fmtNum(m.inwardMT_auto, 3)}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1 opacity-0 group-hover/cell:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => { setEditingMonth(m.ym); setEditDraft(String(m.inwardMT)); }}
+                                    className="p-1 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                                    title="Manual edit karo"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">edit</span>
+                                  </button>
+                                  {m.isOverridden && (
+                                    <button
+                                      onClick={() => resetOverride(m.ym)}
+                                      className="p-1 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                                      title="Auto-calculate par wapas jao"
+                                    >
+                                      <span className="material-symbols-outlined text-[14px]">restart_alt</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </td>
+
                           <td className="px-5 py-3 text-right">
                             <span className="text-sm font-semibold text-amber-700">{m.outwardMT > 0 ? fmtNum(m.outwardMT, 3) : '—'}</span>
                           </td>
@@ -617,18 +745,25 @@ export function TotalScrapPosition() {
                         </tr>
                       );
                     })}
-                    {/* Total Row */}
+                    {/* Grand Total Row */}
                     <tr className="bg-gray-100 border-t-2 border-gray-300">
-                      <td className="px-5 py-3 font-bold text-sm text-gray-800">Grand Total</td>
+                      <td className="px-5 py-3 font-bold text-sm text-gray-800">
+                        Grand Total
+                        {Object.keys(monthlyOverrides).length > 0 && (
+                          <span className="ml-2 text-[10px] bg-amber-100 text-amber-700 border border-amber-300 px-1.5 py-0.5 rounded-full font-semibold">
+                            {Object.keys(monthlyOverrides).length} manual override{Object.keys(monthlyOverrides).length > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-5 py-3 text-right font-bold text-blue-700 text-sm">
-                        {fmtNum(monthlyData.reduce((a, m) => a + m.inwardMT, 0), 3)} MT
+                        {fmtNum(monthlyDataWithOverrides.reduce((a, m) => a + m.inwardMT, 0), 3)} MT
                       </td>
                       <td className="px-5 py-3 text-right font-bold text-amber-700 text-sm">
                         {fmtNum(monthlyData.reduce((a, m) => a + m.outwardMT, 0), 3)} MT
                       </td>
                       <td className="px-5 py-3 text-right">
                         {(() => {
-                          const n = monthlyData.reduce((a, m) => a + m.netMT, 0);
+                          const n = monthlyDataWithOverrides.reduce((a, m) => a + m.netMT, 0);
                           return (
                             <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${
                               n >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
