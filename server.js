@@ -630,6 +630,7 @@ const DocumentSchema = new mongoose.Schema({
   cloudinaryPublicId: { type: String, required: true },
   url: { type: String, required: true },
   thumbnailUrl: { type: String },
+  resourceType: { type: String, default: 'raw' }, // 'image' or 'raw' — for signed URL generation
   type: { type: String, enum: ['pdf', 'image', 'excel', 'word', 'text', 'other'], default: 'other' },
   size: { type: Number, default: 0 }, // bytes
   uploadedAt: { type: Date, default: Date.now },
@@ -722,16 +723,17 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
     
     // Cloudinary folder path (root → scrap-ledger/root)
     const cloudinaryFolder = `scrap-ledger/${folder}`;
+    const resourceType = fileType === 'image' ? 'image' : 'raw';
     
-    // Upload buffer to Cloudinary
+    // Upload buffer to Cloudinary as PRIVATE (not publicly accessible)
     const uploadResult = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: cloudinaryFolder,
-          resource_type: fileType === 'pdf' ? 'raw' : (fileType === 'image' ? 'image' : 'raw'),
+          resource_type: resourceType,
+          type: 'private',           // ⭐ Private — direct URL kaam nahi karegi
           use_filename: true,
           unique_filename: true,
-          access_mode: 'public',
         },
         (error, result) => {
           if (error) reject(error);
@@ -741,13 +743,14 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
       uploadStream.end(req.file.buffer);
     });
     
-    // Save metadata in MongoDB
+    // Save metadata in MongoDB (url is the private url, not publicly accessible)
     const doc = await Document.create({
       name: req.file.originalname,
       folder,
       cloudinaryPublicId: uploadResult.public_id,
-      url: uploadResult.secure_url,
-      thumbnailUrl: fileType === 'image' ? uploadResult.secure_url : null,
+      url: uploadResult.secure_url,       // stored but NOT directly usable
+      thumbnailUrl: null,                 // thumbnails also via signed URL
+      resourceType,                       // store for signed URL generation
       type: fileType,
       size: req.file.size,
       uploadedBy,
@@ -762,16 +765,47 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
   }
 });
 
+// ===== GET signed URL for private document (valid 1 hour) =====
+app.get('/api/documents/:id/signed-url', async (req, res) => {
+  try {
+    const doc = await Document.findById(req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+    
+    const resourceType = doc.resourceType || (doc.type === 'image' ? 'image' : 'raw');
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+    
+    // Generate signed URL — expires in 1 hour
+    const signedUrl = cloudinary.url(doc.cloudinaryPublicId, {
+      resource_type: resourceType,
+      type: 'private',
+      sign_url: true,
+      expires_at: expiresAt,
+      secure: true,
+    });
+    
+    res.json({ 
+      url: signedUrl, 
+      expiresAt,
+      expiresIn: '1 hour'
+    });
+  } catch (err) {
+    console.error('Signed URL error:', err);
+    res.status(500).json({ error: 'Failed to generate signed URL' });
+  }
+});
+
 // ===== DELETE document (Cloudinary + MongoDB) =====
 app.delete('/api/documents/:id', async (req, res) => {
   try {
     const doc = await Document.findById(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
     
-    // Delete from Cloudinary
-    const resourceType = doc.type === 'image' ? 'image' : 'raw';
-    await cloudinary.uploader.destroy(doc.cloudinaryPublicId, { resource_type: resourceType })
-      .catch(err => console.warn('Cloudinary delete warning:', err.message));
+    // Delete from Cloudinary (private type)
+    const resourceType = doc.resourceType || (doc.type === 'image' ? 'image' : 'raw');
+    await cloudinary.uploader.destroy(doc.cloudinaryPublicId, {
+      resource_type: resourceType,
+      type: 'private',
+    }).catch(err => console.warn('Cloudinary delete warning:', err.message));
     
     // Delete from MongoDB
     await Document.findByIdAndDelete(req.params.id);

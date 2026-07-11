@@ -113,6 +113,8 @@ export function DocumentManager() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
+  const [previewSignedUrl, setPreviewSignedUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [loading, setLoading] = useState(true);
@@ -121,8 +123,47 @@ export function DocumentManager() {
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [uploadingFileName, setUploadingFileName] = useState('');
   const [uploadMode, setUploadMode] = useState<'files' | 'folder'>('files');
+  // Cache signed URLs for 50 min (they expire in 1 hour)
+  const signedUrlCache = useRef<Map<string, { url: string; fetchedAt: number }>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Get signed URL (cached for 50 min) ──────────────────────────────
+  const getSignedUrl = async (docId: string): Promise<string | null> => {
+    const cached = signedUrlCache.current.get(docId);
+    const CACHE_MS = 50 * 60 * 1000; // 50 minutes
+    if (cached && Date.now() - cached.fetchedAt < CACHE_MS) {
+      return cached.url;
+    }
+    const res = await fetch(`${API}/api/documents/${docId}/signed-url`);
+    if (!res.ok) return null;
+    const { url } = await res.json();
+    signedUrlCache.current.set(docId, { url, fetchedAt: Date.now() });
+    return url;
+  };
+
+  // ── Open preview with signed URL ──────────────────────────────────
+  const openPreview = async (doc: Document) => {
+    setPreviewDoc(doc);
+    setPreviewSignedUrl(null);
+    setPreviewLoading(true);
+    const url = await getSignedUrl(doc._id);
+    setPreviewSignedUrl(url);
+    setPreviewLoading(false);
+  };
+
+  // ── Download with signed URL ──────────────────────────────────────
+  const downloadDoc = async (doc: Document) => {
+    const url = await getSignedUrl(doc._id);
+    if (!url) { showToast('Download failed — try again', 'error'); return; }
+    const a = window.document.createElement('a');
+    a.href = url;
+    a.download = doc.name;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
+  };
+
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -673,15 +714,11 @@ export function DocumentManager() {
                       {/* Preview area */}
                       <div
                         className={`h-32 flex items-center justify-center cursor-pointer ${fi.bg}`}
-                        onClick={() => setPreviewDoc(doc)}
+                        onClick={() => openPreview(doc)}
                       >
-                        {doc.type === 'image' && doc.thumbnailUrl ? (
-                          <img src={doc.thumbnailUrl} alt={doc.name} className="h-full w-full object-cover" />
-                        ) : (
-                          <span className={`material-symbols-outlined text-[48px] ${fi.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>
-                            {fi.icon}
-                          </span>
-                        )}
+                        <span className={`material-symbols-outlined text-[48px] ${fi.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>
+                          {fi.icon}
+                        </span>
                       </div>
 
                       {/* File info */}
@@ -693,23 +730,19 @@ export function DocumentManager() {
                       {/* Hover Actions */}
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded-2xl">
                         <button
-                          onClick={() => setPreviewDoc(doc)}
+                          onClick={() => openPreview(doc)}
                           className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center text-white transition-all"
                           title="Preview"
                         >
                           <span className="material-symbols-outlined text-[18px]">visibility</span>
                         </button>
-                        <a
-                          href={doc.url}
-                          download={doc.name}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          onClick={e => { e.stopPropagation(); downloadDoc(doc); }}
                           className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center text-white transition-all"
                           title="Download"
-                          onClick={e => e.stopPropagation()}
                         >
                           <span className="material-symbols-outlined text-[18px]">download</span>
-                        </a>
+                        </button>
                         <button
                           onClick={() => setDeleteConfirm(doc._id)}
                           className="w-9 h-9 rounded-full bg-red-500/60 hover:bg-red-500 flex items-center justify-center text-white transition-all"
@@ -755,13 +788,13 @@ export function DocumentManager() {
                           <td className="px-4 py-3 text-on-surface-variant text-xs hidden lg:table-cell">{formatDate(doc.uploadedAt)}</td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1">
-                              <button onClick={() => setPreviewDoc(doc)} className="p-2 rounded-lg hover:bg-primary/10 text-on-surface-variant hover:text-primary transition-all" title="Preview">
+                              <button onClick={() => openPreview(doc)} className="p-2 rounded-lg hover:bg-primary/10 text-on-surface-variant hover:text-primary transition-all" title="Preview">
                                 <span className="material-symbols-outlined text-[18px]">visibility</span>
                               </button>
-                              <a href={doc.url} download={doc.name} target="_blank" rel="noopener noreferrer"
+                              <button onClick={() => downloadDoc(doc)}
                                 className="p-2 rounded-lg hover:bg-green-500/10 text-on-surface-variant hover:text-green-600 transition-all" title="Download">
                                 <span className="material-symbols-outlined text-[18px]">download</span>
-                              </a>
+                              </button>
                               <button onClick={() => setDeleteConfirm(doc._id)} className="p-2 rounded-lg hover:bg-red-500/10 text-on-surface-variant hover:text-error transition-all" title="Delete">
                                 <span className="material-symbols-outlined text-[18px]">delete</span>
                               </button>
@@ -802,7 +835,7 @@ export function DocumentManager() {
 
       {/* ── Preview Modal ─────────────────────────────────────────── */}
       {previewDoc && (
-        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setPreviewDoc(null)}>
+        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => { setPreviewDoc(null); setPreviewSignedUrl(null); }}>
           <div className="relative max-w-4xl w-full max-h-[90vh] flex flex-col bg-surface rounded-3xl overflow-hidden shadow-2xl border border-white/20" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/20 bg-white/40 dark:bg-white/5">
@@ -816,12 +849,14 @@ export function DocumentManager() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <a href={previewDoc.url} download={previewDoc.name} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-all">
+                <button
+                  onClick={() => downloadDoc(previewDoc)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-all"
+                >
                   <span className="material-symbols-outlined text-[16px]">download</span>
                   Download
-                </a>
-                <button onClick={() => setPreviewDoc(null)} className="p-2 rounded-xl hover:bg-black/10 text-on-surface-variant transition-all">
+                </button>
+                <button onClick={() => { setPreviewDoc(null); setPreviewSignedUrl(null); }} className="p-2 rounded-xl hover:bg-black/10 text-on-surface-variant transition-all">
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
@@ -829,24 +864,25 @@ export function DocumentManager() {
 
             {/* Preview Content */}
             <div className="flex-1 overflow-hidden bg-black/20 min-h-[400px]">
-              {previewDoc.type === 'image' ? (
-                <img src={previewDoc.url} alt={previewDoc.name} className="w-full h-full object-contain" />
+              {previewLoading ? (
+                <div className="flex flex-col items-center justify-center h-full gap-4 py-20">
+                  <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm text-on-surface-variant">Secure link generate ho raha hai...</p>
+                </div>
+              ) : !previewSignedUrl ? (
+                <div className="flex flex-col items-center justify-center h-full gap-4 py-20">
+                  <span className="material-symbols-outlined text-[48px] text-error opacity-60">error</span>
+                  <p className="text-sm text-on-surface-variant">Preview load nahi hua. Dobara try karein.</p>
+                </div>
+              ) : previewDoc.type === 'image' ? (
+                <img src={previewSignedUrl} alt={previewDoc.name} className="w-full h-full object-contain" />
               ) : previewDoc.type === 'pdf' ? (
                 <div className="relative w-full h-full min-h-[500px] flex flex-col">
                   <iframe
-                    src={`https://docs.google.com/viewer?url=${encodeURIComponent(previewDoc.url)}&embedded=true`}
+                    src={`https://docs.google.com/viewer?url=${encodeURIComponent(previewSignedUrl)}&embedded=true`}
                     title={previewDoc.name}
                     className="w-full flex-1 min-h-[500px]"
                     style={{ border: 'none' }}
-                    onLoad={(e) => {
-                      // If Google Docs viewer fails, show fallback
-                      try {
-                        const iframe = e.target as HTMLIFrameElement;
-                        if (!iframe.contentDocument && !iframe.contentWindow) {
-                          iframe.src = previewDoc.url;
-                        }
-                      } catch {}
-                    }}
                   />
                 </div>
               ) : (
@@ -855,11 +891,13 @@ export function DocumentManager() {
                     {fileIcon(previewDoc.type).icon}
                   </span>
                   <p className="text-on-surface-variant text-center">Is file type ka preview available nahi hai.<br />Download karein aur open karein.</p>
-                  <a href={previewDoc.url} download={previewDoc.name} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-primary text-white font-semibold hover:bg-primary/90 transition-all">
+                  <button
+                    onClick={() => downloadDoc(previewDoc)}
+                    className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-primary text-white font-semibold hover:bg-primary/90 transition-all"
+                  >
                     <span className="material-symbols-outlined">download</span>
                     Download {previewDoc.name}
-                  </a>
+                  </button>
                 </div>
               )}
             </div>
