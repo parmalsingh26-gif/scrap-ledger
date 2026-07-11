@@ -4,11 +4,47 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { v2 as cloudinary } from 'cloudinary';
+import multer from 'multer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Load env: .env.local for local dev, system env vars for Render/production
 dotenv.config({ path: '.env.local' });
+dotenv.config({ path: '.env' }); // fallback for production if needed
+
+
+// ========== Cloudinary Config ==========
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure: true
+});
+
+// Multer — memory storage (file buffer upload ke liye)
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'application/pdf',
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('File type not allowed'));
+    }
+  }
+});
 
 const app = express();
 app.use(cors());
@@ -584,6 +620,181 @@ app.post('/api/backup', async (req, res) => {
   } catch (err) {
     console.error('Backup restore error:', err);
     res.status(500).json({ error: 'Backup restore failed', details: String(err) });
+  }
+});
+
+// ========== Document Manager Schema ==========
+const DocumentSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  folder: { type: String, default: 'root' }, // folder path e.g. "Lots/2026/July"
+  cloudinaryPublicId: { type: String, required: true },
+  url: { type: String, required: true },
+  thumbnailUrl: { type: String },
+  type: { type: String, enum: ['pdf', 'image', 'excel', 'word', 'text', 'other'], default: 'other' },
+  size: { type: Number, default: 0 }, // bytes
+  uploadedAt: { type: Date, default: Date.now },
+  uploadedBy: { type: String, default: 'User' },
+  tags: [String]
+});
+const Document = mongoose.model('Document', DocumentSchema);
+
+const FolderSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  path: { type: String, required: true, unique: true }, // full path e.g. "Lots/2026/July"
+  parent: { type: String, default: 'root' }, // parent folder path
+  createdAt: { type: Date, default: Date.now }
+});
+const Folder = mongoose.model('Folder', FolderSchema);
+
+// ===== Helper: detect file type =====
+function detectFileType(mimetype) {
+  if (mimetype === 'application/pdf') return 'pdf';
+  if (mimetype.startsWith('image/')) return 'image';
+  if (mimetype.includes('excel') || mimetype.includes('spreadsheet')) return 'excel';
+  if (mimetype.includes('word') || mimetype.includes('wordprocessing')) return 'word';
+  if (mimetype === 'text/plain') return 'text';
+  return 'other';
+}
+
+// ===== GET all folders =====
+app.get('/api/folders', async (req, res) => {
+  try {
+    const folders = await Folder.find({}, '-__v').sort('path');
+    res.json(folders);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch folders' });
+  }
+});
+
+// ===== POST create folder =====
+app.post('/api/folders', async (req, res) => {
+  try {
+    const { name, parent = 'root' } = req.body;
+    if (!name) return res.status(400).json({ error: 'Folder name required' });
+    const cleanName = name.trim().replace(/[/\\]/g, '-');
+    const fullPath = parent === 'root' ? cleanName : `${parent}/${cleanName}`;
+    const existing = await Folder.findOne({ path: fullPath });
+    if (existing) return res.status(400).json({ error: 'Folder already exists' });
+    const folder = await Folder.create({ name: cleanName, path: fullPath, parent });
+    const ret = folder.toObject(); delete ret.__v;
+    res.json(ret);
+  } catch (err) {
+    console.error('Folder create error:', err);
+    res.status(500).json({ error: 'Failed to create folder' });
+  }
+});
+
+// ===== DELETE folder (only if empty) =====
+app.delete('/api/folders/:id', async (req, res) => {
+  try {
+    const folder = await Folder.findById(req.params.id);
+    if (!folder) return res.status(404).json({ error: 'Folder not found' });
+    const fileCount = await Document.countDocuments({ folder: folder.path });
+    const subFolderCount = await Folder.countDocuments({ parent: folder.path });
+    if (fileCount > 0 || subFolderCount > 0) {
+      return res.status(400).json({ error: `Folder not empty. ${fileCount} file(s) aur ${subFolderCount} subfolder(s) hain. Pehle inhein delete karein.` });
+    }
+    await Folder.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete folder' });
+  }
+});
+
+// ===== GET documents (optionally by folder) =====
+app.get('/api/documents', async (req, res) => {
+  try {
+    const { folder } = req.query;
+    const query = folder ? { folder } : {};
+    const docs = await Document.find(query, '-__v').sort('-uploadedAt');
+    res.json(docs);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch documents' });
+  }
+});
+
+// ===== POST upload file to Cloudinary + save in MongoDB =====
+app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const { folder = 'root', uploadedBy = 'User' } = req.body;
+    const fileType = detectFileType(req.file.mimetype);
+    
+    // Cloudinary folder path (root → scrap-ledger/root)
+    const cloudinaryFolder = `scrap-ledger/${folder}`;
+    
+    // Upload buffer to Cloudinary
+    const uploadResult = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: cloudinaryFolder,
+          resource_type: fileType === 'pdf' ? 'raw' : (fileType === 'image' ? 'image' : 'raw'),
+          use_filename: true,
+          unique_filename: true,
+          access_mode: 'public',
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      uploadStream.end(req.file.buffer);
+    });
+    
+    // Save metadata in MongoDB
+    const doc = await Document.create({
+      name: req.file.originalname,
+      folder,
+      cloudinaryPublicId: uploadResult.public_id,
+      url: uploadResult.secure_url,
+      thumbnailUrl: fileType === 'image' ? uploadResult.secure_url : null,
+      type: fileType,
+      size: req.file.size,
+      uploadedBy,
+      tags: [folder]
+    });
+    
+    const ret = doc.toObject(); delete ret.__v;
+    res.json(ret);
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({ error: 'Upload failed', details: String(err) });
+  }
+});
+
+// ===== DELETE document (Cloudinary + MongoDB) =====
+app.delete('/api/documents/:id', async (req, res) => {
+  try {
+    const doc = await Document.findById(req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+    
+    // Delete from Cloudinary
+    const resourceType = doc.type === 'image' ? 'image' : 'raw';
+    await cloudinary.uploader.destroy(doc.cloudinaryPublicId, { resource_type: resourceType })
+      .catch(err => console.warn('Cloudinary delete warning:', err.message));
+    
+    // Delete from MongoDB
+    await Document.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Document delete error:', err);
+    res.status(500).json({ error: 'Failed to delete document' });
+  }
+});
+
+// ===== GET Cloudinary storage usage =====
+app.get('/api/cloudinary/usage', async (req, res) => {
+  try {
+    const usage = await cloudinary.api.usage();
+    res.json({
+      usedBytes: usage.storage.usage,
+      usedGB: (usage.storage.usage / (1024 * 1024 * 1024)).toFixed(3),
+      limitGB: 25,
+      percentUsed: ((usage.storage.usage / (25 * 1024 * 1024 * 1024)) * 100).toFixed(2)
+    });
+  } catch (err) {
+    console.error('Usage fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch usage' });
   }
 });
 
