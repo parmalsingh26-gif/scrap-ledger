@@ -119,7 +119,10 @@ export function DocumentManager() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [uploadingFileName, setUploadingFileName] = useState('');
+  const [uploadMode, setUploadMode] = useState<'files' | 'folder'>('files');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -155,17 +158,20 @@ export function DocumentManager() {
     loadDocuments(selectedFolder);
   }, [selectedFolder, loadDocuments]);
 
-  // ── Upload ────────────────────────────────────────────────────────────────
-  const handleUpload = async (files: FileList | null) => {
+  // ── Upload individual files ───────────────────────────────────────────────
+  const handleUpload = async (files: FileList | null, baseFolderOverride?: string) => {
     if (!files || files.length === 0) return;
     setUploading(true);
     setUploadProgress(0);
 
     let uploaded = 0;
+    let failed = 0;
     for (const file of Array.from(files)) {
+      setUploadingFileName(file.name);
+      const targetFolder = baseFolderOverride || selectedFolder;
       const fd = new FormData();
       fd.append('file', file);
-      fd.append('folder', selectedFolder);
+      fd.append('folder', targetFolder);
       fd.append('uploadedBy', 'User');
 
       const res = await fetch(`${API}/api/documents/upload`, { method: 'POST', body: fd });
@@ -173,26 +179,113 @@ export function DocumentManager() {
         uploaded++;
         setUploadProgress(Math.round((uploaded / files.length) * 100));
       } else {
-        const err = await res.json();
-        showToast(`Upload failed: ${err.error}`, 'error');
+        failed++;
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        console.error(`Upload failed for ${file.name}:`, err);
       }
     }
 
     setUploading(false);
     setUploadProgress(0);
+    setUploadingFileName('');
     if (uploaded > 0) {
-      showToast(`${uploaded} file(s) successfully upload ho gaye!`);
+      const msg = failed > 0
+        ? `${uploaded} files upload hue, ${failed} fail hue`
+        : `${uploaded} file(s) successfully upload ho gaye!`;
+      showToast(msg, failed > 0 ? 'error' : 'success');
       loadDocuments(selectedFolder);
+      loadFolders();
       loadUsage();
+    } else {
+      showToast('Upload fail ho gaya', 'error');
     }
   };
 
-  // ── Drag & Drop ───────────────────────────────────────────────────────────
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    handleUpload(e.dataTransfer.files);
+  // ── Upload entire folder with subfolder structure ─────────────────────────
+  const handleFolderUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setUploadProgress(0);
+
+    const fileArray = Array.from(files);
+    // Collect all unique subfolder paths from webkitRelativePath
+    const folderPaths = new Set<string>();
+    fileArray.forEach(file => {
+      const parts = (file as any).webkitRelativePath.split('/');
+      // Build all intermediate folder paths
+      for (let i = 1; i < parts.length; i++) {
+        const folderPath = parts.slice(0, i).join('/');
+        if (folderPath) folderPaths.add(folderPath);
+      }
+    });
+
+    // Sort so parent folders are created before children
+    const sortedPaths = Array.from(folderPaths).sort((a, b) => a.split('/').length - b.split('/').length);
+
+    // Create all folders in DB (relative to selectedFolder)
+    const createdFolderPaths = new Set<string>();
+    for (const relPath of sortedPaths) {
+      const parts = relPath.split('/');
+      const name = parts[parts.length - 1];
+      const parentRelPath = parts.slice(0, -1).join('/');
+      const parentFullPath = parentRelPath
+        ? (selectedFolder === 'root' ? parentRelPath : `${selectedFolder}/${parentRelPath}`)
+        : selectedFolder;
+      const fullPath = selectedFolder === 'root' ? relPath : `${selectedFolder}/${relPath}`;
+
+      if (!createdFolderPaths.has(fullPath)) {
+        await fetch(`${API}/api/folders`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, parent: parentFullPath })
+        }).catch(() => {}); // ignore if already exists
+        createdFolderPaths.add(fullPath);
+      }
+    }
+
+    // Upload files into their respective folders
+    let uploaded = 0;
+    let failed = 0;
+    for (const file of fileArray) {
+      setUploadingFileName(file.name);
+      const relativePath = (file as any).webkitRelativePath as string;
+      const parts = relativePath.split('/');
+      const fileFolderRelPath = parts.slice(0, -1).join('/');
+      const targetFolder = fileFolderRelPath
+        ? (selectedFolder === 'root' ? fileFolderRelPath : `${selectedFolder}/${fileFolderRelPath}`)
+        : selectedFolder;
+
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('folder', targetFolder);
+      fd.append('uploadedBy', 'User');
+
+      const res = await fetch(`${API}/api/documents/upload`, { method: 'POST', body: fd });
+      if (res.ok) {
+        uploaded++;
+        setUploadProgress(Math.round((uploaded / fileArray.length) * 100));
+      } else {
+        failed++;
+      }
+    }
+
+    setUploading(false);
+    setUploadProgress(0);
+    setUploadingFileName('');
+
+    if (uploaded > 0) {
+      const msg = failed > 0
+        ? `Folder upload: ${uploaded} files succeed, ${failed} fail`
+        : `Folder successfully upload ho gaya! ${uploaded} files, ${sortedPaths.length} subfolders`;
+      showToast(msg, failed > 0 ? 'error' : 'success');
+      loadFolders();
+      loadDocuments(selectedFolder);
+      loadUsage();
+    } else {
+      showToast('Folder upload fail ho gaya', 'error');
+    }
   };
+
 
   // ── Delete document ───────────────────────────────────────────────────────
   const handleDeleteDoc = async (id: string) => {
@@ -416,40 +509,118 @@ export function DocumentManager() {
           <div
             onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
             onDragLeave={() => setIsDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => !uploading && fileInputRef.current?.click()}
-            className={`relative border-2 border-dashed rounded-2xl p-6 flex items-center justify-center gap-4 cursor-pointer transition-all duration-300 ${
+            onDrop={e => {
+              e.preventDefault();
+              setIsDragOver(false);
+              if (uploadMode === 'folder') {
+                handleFolderUpload(e.dataTransfer.files);
+              } else {
+                handleUpload(e.dataTransfer.files);
+              }
+            }}
+            className={`relative border-2 border-dashed rounded-2xl p-5 transition-all duration-300 ${
               isDragOver
                 ? 'border-primary bg-primary/10 scale-[1.01]'
                 : 'border-white/30 bg-white/30 dark:bg-white/5 hover:border-primary/60 hover:bg-primary/5'
             }`}
           >
+            {/* Hidden file inputs */}
             <input
               ref={fileInputRef}
               type="file"
               multiple
               className="hidden"
               accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.xls,.xlsx,.doc,.docx,.txt"
-              onChange={e => handleUpload(e.target.files)}
+              onChange={e => { handleUpload(e.target.files); e.target.value = ''; }}
             />
+            <input
+              ref={folderInputRef}
+              type="file"
+              className="hidden"
+              // @ts-ignore — webkitdirectory is non-standard but widely supported
+              webkitdirectory="true"
+              multiple
+              onChange={e => { handleFolderUpload(e.target.files); e.target.value = ''; }}
+            />
+
             {uploading ? (
-              <div className="flex flex-col items-center gap-3 w-full max-w-xs">
+              <div className="flex flex-col items-center gap-3 w-full max-w-sm mx-auto py-4">
                 <span className="material-symbols-outlined text-primary text-[40px] animate-bounce">cloud_upload</span>
                 <p className="text-sm font-semibold text-primary">Uploading... {uploadProgress}%</p>
+                {uploadingFileName && (
+                  <p className="text-xs text-on-surface-variant truncate max-w-full px-4 text-center">
+                    📄 {uploadingFileName}
+                  </p>
+                )}
                 <div className="w-full h-2 bg-surface-variant rounded-full overflow-hidden">
                   <div className="h-full bg-gradient-to-r from-violet-500 to-blue-500 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
                 </div>
               </div>
             ) : (
-              <>
-                <span className="material-symbols-outlined text-[36px] text-primary/60">upload_file</span>
-                <div>
-                  <p className="text-sm font-semibold text-on-surface">
-                    Files yahan drop karein ya <span className="text-primary underline">click karein</span>
-                  </p>
-                  <p className="text-xs text-on-surface-variant mt-0.5">PDF, Images, Excel, Word — max 50MB per file</p>
+              <div className="flex flex-col gap-3">
+                {/* Mode Toggle */}
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-outline uppercase tracking-wider">Upload Mode</p>
+                  <div className="flex rounded-xl overflow-hidden border border-white/30 text-xs">
+                    <button
+                      onClick={() => setUploadMode('files')}
+                      className={`px-3 py-1.5 font-semibold flex items-center gap-1.5 transition-all ${
+                        uploadMode === 'files' ? 'bg-primary text-white' : 'bg-white/40 text-on-surface-variant hover:bg-white/60'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                      Files
+                    </button>
+                    <button
+                      onClick={() => setUploadMode('folder')}
+                      className={`px-3 py-1.5 font-semibold flex items-center gap-1.5 transition-all ${
+                        uploadMode === 'folder' ? 'bg-violet-600 text-white' : 'bg-white/40 text-on-surface-variant hover:bg-white/60'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">folder_zip</span>
+                      Folder
+                    </button>
+                  </div>
                 </div>
-              </>
+
+                {/* Drop area */}
+                <div
+                  onClick={() => uploadMode === 'folder'
+                    ? folderInputRef.current?.click()
+                    : fileInputRef.current?.click()
+                  }
+                  className="flex items-center gap-4 cursor-pointer py-3"
+                >
+                  <span className={`material-symbols-outlined text-[40px] ${
+                    uploadMode === 'folder' ? 'text-violet-500/60' : 'text-primary/60'
+                  }`} style={{ fontVariationSettings: "'FILL' 1" }}>
+                    {uploadMode === 'folder' ? 'folder_open' : 'upload_file'}
+                  </span>
+                  <div>
+                    {uploadMode === 'folder' ? (
+                      <>
+                        <p className="text-sm font-semibold text-on-surface">
+                          Poora folder drop karein ya{' '}
+                          <span className="text-violet-600 underline">click karein</span>
+                        </p>
+                        <p className="text-xs text-on-surface-variant mt-0.5">
+                          Subfolders ke saath automatically structure maintain hoga ✅
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-semibold text-on-surface">
+                          Files yahan drop karein ya{' '}
+                          <span className="text-primary underline">click karein</span>
+                        </p>
+                        <p className="text-xs text-on-surface-variant mt-0.5">
+                          PDF, Images, Excel, Word — max 50MB per file
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
 
