@@ -4,6 +4,7 @@ import { CategoryBadge } from '../components/CategoryBadge';
 import { ProtectedView } from '../components/ProtectedView';
 import { QRScannerModal } from '../components/QRScannerModal';
 import { useNavigate } from 'react-router-dom';
+import { getMcrLots } from './McrView';
 
 const GST_RATES = [0, 5, 12, 18];
 
@@ -47,9 +48,69 @@ export function OutwardEntry() {
 
   const [status, setStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
-  // ── QR Scanner ────────────────────────────────────────────────────────────
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [scanAutoFillMsg, setScanAutoFillMsg] = useState<string | null>(null);
+
+  // ── MCR Reference Search ───────────────────────────────────────────────
+  const [mcrSearchQuery, setMcrSearchQuery] = useState('');
+  const [showMcrPanel, setShowMcrPanel] = useState(false);
+  const [selectedMcrLot, setSelectedMcrLot] = useState<ReturnType<typeof getMcrLots>[0] | null>(null);
+  const [mcrSearchFocused, setMcrSearchFocused] = useState(false);
+
+  // Load all MCR lots fresh each time (picks up localStorage edits)
+  const allMcrLots = useMemo(() => getMcrLots(), []);
+
+  // Filter MCR suggestions based on search query
+  const mcrSuggestions = useMemo(() => {
+    const q = mcrSearchQuery.trim().toLowerCase();
+    if (!q || q.length < 2) {
+      // Show pending lots by default when panel opens
+      const pending = allMcrLots.filter(l => l.status === 'pending').slice(0, 8);
+      return pending;
+    }
+    const matched = allMcrLots.filter(l =>
+      (l.lotNo || '').toLowerCase().includes(q) ||
+      (l.material || '').toLowerCase().includes(q) ||
+      (l.purchaser || '').toLowerCase().includes(q) ||
+      (l.scrNo || '').toLowerCase().includes(q)
+    );
+    const pending = matched.filter(l => l.status === 'pending');
+    const rest = matched.filter(l => l.status !== 'pending');
+    return [...pending, ...rest].slice(0, 12);
+  }, [mcrSearchQuery, allMcrLots]);
+
+  // Handle MCR lot selection → auto-fill outward form fields
+  const handleMcrLotSelect = (lot: ReturnType<typeof getMcrLots>[0]) => {
+    setSelectedMcrLot(lot);
+    setShowMcrPanel(false);
+    setMcrSearchFocused(false);
+    setScanAutoFillMsg(null);
+
+    // Auto-fill Lot Number from MCR (user can override)
+    if (lot.lotNo) setLotNumber(lot.lotNo);
+
+    // Auto-fill firm name (purchaser from MCR)
+    if (lot.purchaser) {
+      setFirmName(lot.purchaser);
+      setFirmInput(lot.purchaser);
+    }
+
+    // Auto-fill date sold from eAuctionDate (convert DD/MM/YYYY → YYYY-MM-DD)
+    if (lot.eAuctionDate && lot.eAuctionDate.toLowerCase() !== 'cancelled') {
+      // Handle compound dates like "30/06/2023 & 26/07/2023" — take first date
+      const firstDate = lot.eAuctionDate.split(/[&,\s]/)[0].trim();
+      const parts = firstDate.split('/');
+      if (parts.length === 3 && parts[2].length === 4) {
+        const iso = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        if (!isNaN(Date.parse(iso))) setDateSold(iso);
+      }
+    }
+  };
+
+  const clearMcrSelection = () => {
+    setSelectedMcrLot(null);
+    setMcrSearchQuery('');
+  };
 
   const unitMap = useMemo(() => new Map((units || []).map(u => [u.id, u.name])), [units]);
 
@@ -385,14 +446,148 @@ export function OutwardEntry() {
             {/* Section 2: Sales Details */}
             <div className="bg-surface-container-low/50 backdrop-blur-sm rounded-xl p-6 border border-secondary/20 relative overflow-hidden group hover:border-secondary/40 transition-colors">
               <div className="absolute left-0 top-0 bottom-0 w-1 bg-secondary rounded-l-xl"></div>
-              <h3 className="font-label-md text-label-md text-on-surface mb-6 flex items-center">
+              <h3 className="font-label-md text-label-md text-on-surface mb-4 flex items-center">
                 <span className="material-symbols-outlined text-secondary mr-2 text-[18px]">receipt_long</span>
                 Sales Details
               </h3>
 
+              {/* ── MCR Reference Search Panel ──────────────────────────────── */}
+              <div className="mb-6 rounded-xl border border-indigo-200 overflow-hidden">
+                <div
+                  className={`px-4 py-3 flex items-center gap-3 cursor-pointer transition-colors ${
+                    showMcrPanel ? 'bg-indigo-600' : 'bg-indigo-50 hover:bg-indigo-100'
+                  }`}
+                  onClick={() => setShowMcrPanel(p => !p)}
+                >
+                  <span className={`material-symbols-outlined text-[20px] ${showMcrPanel ? 'text-white' : 'text-indigo-600'}`}
+                    style={{ fontVariationSettings: "'FILL' 1" }}>inventory_2</span>
+                  <div className="flex-1">
+                    <p className={`text-sm font-bold ${showMcrPanel ? 'text-white' : 'text-indigo-700'}`}>
+                      🔍 MCR Lot se Search &amp; Auto-fill
+                    </p>
+                    <p className={`text-xs mt-0.5 ${showMcrPanel ? 'text-indigo-200' : 'text-indigo-500'}`}>
+                      Material name, Lot No, ya Purchaser se dhundho — firm name &amp; date auto-fill hoga
+                    </p>
+                  </div>
+                  {selectedMcrLot && !showMcrPanel && (
+                    <div className="flex items-center gap-2 bg-white border border-emerald-300 rounded-lg px-2.5 py-1.5">
+                      <span className="material-symbols-outlined text-emerald-600 text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                      <div>
+                        <p className="text-[10px] font-bold text-emerald-700">{selectedMcrLot.lotNo || selectedMcrLot.material.slice(0, 20)}</p>
+                        <p className="text-[9px] text-emerald-600">{selectedMcrLot.qty} {selectedMcrLot.unit} | {selectedMcrLot.purchaser?.slice(0, 18) || '—'}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); clearMcrSelection(); }}
+                        className="ml-1 text-outline hover:text-error transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">close</span>
+                      </button>
+                    </div>
+                  )}
+                  <span className={`material-symbols-outlined text-[20px] transition-transform duration-200 ${showMcrPanel ? 'text-white rotate-180' : 'text-indigo-400'}`}>expand_more</span>
+                </div>
+
+                {showMcrPanel && (
+                  <div className="bg-white">
+                    {/* Search box */}
+                    <div className="p-3 border-b border-indigo-100">
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-indigo-400 text-[18px]">search</span>
+                        <input
+                          type="text"
+                          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-indigo-200 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
+                          placeholder="Material name, Lot No, Purchaser ya SCR No type karo..."
+                          value={mcrSearchQuery}
+                          onChange={e => setMcrSearchQuery(e.target.value)}
+                          autoFocus
+                        />
+                        {mcrSearchQuery && (
+                          <button className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-error" onClick={() => setMcrSearchQuery('')}>
+                            <span className="material-symbols-outlined text-[18px]">close</span>
+                          </button>
+                        )}
+                      </div>
+                      {!mcrSearchQuery && (
+                        <p className="text-[10px] text-indigo-400 mt-1.5 ml-1 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]">info</span>
+                          ⏳ Pending lots automatically dikh rahe hain — type karo to filter ho
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Results list */}
+                    <div className="max-h-64 overflow-y-auto">
+                      {mcrSuggestions.length === 0 ? (
+                        <div className="px-4 py-6 text-center text-outline text-sm">
+                          <span className="material-symbols-outlined text-[32px] text-outline/40 block mb-2">search_off</span>
+                          Koi lot nahi mila — query badlo
+                        </div>
+                      ) : (
+                        mcrSuggestions.map(lot => {
+                          const isPending = lot.status === 'pending';
+                          const isCancelled = lot.status === 'cancelled';
+                          const isSelected = selectedMcrLot?.id === lot.id;
+                          return (
+                            <div
+                              key={lot.id}
+                              onClick={() => handleMcrLotSelect(lot)}
+                              className={`px-4 py-3 cursor-pointer border-b border-indigo-50 last:border-0 transition-all ${
+                                isSelected
+                                  ? 'bg-emerald-50 border-l-4 border-l-emerald-500'
+                                  : isPending
+                                    ? 'hover:bg-amber-50 bg-amber-50/40'
+                                    : isCancelled
+                                      ? 'hover:bg-red-50/50 opacity-60'
+                                      : 'hover:bg-indigo-50'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono font-bold text-[11px] text-on-surface tracking-wide">
+                                      {lot.lotNo || <span className="text-outline italic font-normal">No Lot No</span>}
+                                    </span>
+                                    <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${
+                                      isPending ? 'bg-amber-100 text-amber-700 border-amber-200'
+                                        : isCancelled ? 'bg-red-100 text-red-700 border-red-200'
+                                        : 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                                    }`}>
+                                      {isPending ? '⏳ Pending' : isCancelled ? '🚫 Cancelled' : '✅ Delivered'}
+                                    </span>
+                                    {lot.section === 'mp' && (
+                                      <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-violet-100 text-violet-700 border border-violet-200">M&amp;P</span>
+                                    )}
+                                    {isSelected && (
+                                      <span className="material-symbols-outlined text-emerald-600 text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-on-surface font-medium mt-0.5 truncate">{lot.material}</p>
+                                  <div className="flex items-center gap-3 mt-1 text-[10px] text-outline flex-wrap">
+                                    <span className="font-data-mono font-bold text-primary">{lot.qty} {lot.unit}</span>
+                                    {lot.purchaser && <span>🏢 {lot.purchaser}</span>}
+                                    {lot.eAuctionDate && <span>📅 Auction: {lot.eAuctionDate}</span>}
+                                    {lot.scrNo && <span>📋 SCR: {lot.scrNo}</span>}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="px-4 py-2 bg-indigo-50/50 border-t border-indigo-100 flex items-center justify-between">
+                      <p className="text-[10px] text-indigo-400">{mcrSuggestions.length} results</p>
+                      <button type="button" onClick={() => setShowMcrPanel(false)} className="text-xs text-indigo-600 font-medium hover:underline">Close</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* ── QR Scan Auto-fill Message ───────────────────────────────── */}
               {scanAutoFillMsg && (
-                <div className={`col-span-1 md:col-span-3 px-4 py-3 rounded-xl border text-sm font-medium flex items-start gap-2 ${
+                <div className={`mb-4 px-4 py-3 rounded-xl border text-sm font-medium flex items-start gap-2 ${
                   scanAutoFillMsg.startsWith('✅')
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                     : 'bg-amber-50 border-amber-200 text-amber-800'

@@ -13,6 +13,7 @@ const navItems = [
   { name: 'Total Scrap Position', path: '/total-scrap', icon: 'analytics' },
   { name: 'BVP Scrap Position', path: '/bvp-scrap', icon: 'precision_manufacturing' },
   { name: 'Documents', path: '/documents', icon: 'folder_open' },
+  { name: 'MCR Report', path: '/mcr', icon: 'description' },
   { name: 'Task Planner', path: '/tasks', icon: 'checklist' },
   { name: 'Notebook', path: '/notebook', icon: 'menu_book' },
   { name: 'Admin Settings', path: '/admin', icon: 'admin_panel_settings' },

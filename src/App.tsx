@@ -18,6 +18,7 @@ import { LoginPage } from './pages/LoginPage';
 import { AuthProvider, useAuth } from './components/AuthProvider';
 import { SyncStatus } from './components/SyncStatus';
 import { DocumentManager } from './pages/DocumentManager';
+import { McrView } from './pages/McrView';
 
 function AppContent() {
   const { isLoggedIn } = useAuth();
@@ -37,6 +38,7 @@ function AppContent() {
           <Route path="/total-scrap" element={<TotalScrapPosition />} />
           <Route path="/bvp-scrap" element={<BvpScrapPosition />} />
           <Route path="/documents" element={<DocumentManager />} />
+          <Route path="/mcr" element={<McrView />} />
           <Route path="/admin" element={<AdminSettings />} />
           <Route path="/tasks" element={<TaskPlanner />} />
           <Route path="/notebook" element={<NoteBook />} />
