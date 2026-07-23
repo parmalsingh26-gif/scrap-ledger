@@ -601,7 +601,7 @@ export function EntryHistory() {
             const outwardRaw = isOut ? (raw as OutwardEntry) : null;
 
             // Delivery schedule info for outward
-            const hasMultipleDeliveries = outwardRaw?.deliveries && outwardRaw.deliveries.length > 1;
+            const hasDeliveries = outwardRaw?.deliveries && outwardRaw.deliveries.length > 0;
             const finalSlot = outwardRaw?.deliveries?.find(d => d.isFinal);
             const finalDeliveryDate = finalSlot?.date || outwardRaw?.dateDelivered;
 
@@ -698,12 +698,17 @@ export function EntryHistory() {
                     {/* ── Delivery Schedule (Outward only) ───────────────────── */}
                     {isOut && outwardRaw && (
                       <div className="mt-3 pt-3 border-t border-outline-variant/15">
-                        <p className="text-[10px] font-bold text-outline uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <p className="text-[10px] font-bold text-outline uppercase tracking-wider mb-2 flex items-center gap-1.5">
                           <span className="material-symbols-outlined text-[12px]" style={{ fontVariationSettings: "'FILL' 1" }}>local_shipping</span>
-                          Delivery Schedule
+                          Delivery Breakup
+                          {hasDeliveries && (
+                            <span className="bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full text-[9px] font-bold">
+                              {outwardRaw.deliveries!.length} date{outwardRaw.deliveries!.length > 1 ? 'en' : ''}
+                            </span>
+                          )}
                         </p>
 
-                        {hasMultipleDeliveries ? (
+                        {hasDeliveries ? (
                           <div className="flex flex-wrap gap-2">
                             {outwardRaw.deliveries!.map((d, di) => (
                               <div
@@ -711,22 +716,33 @@ export function EntryHistory() {
                                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                                   d.isFinal
                                     ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-sm'
-                                    : 'bg-gray-50 border-gray-200 text-gray-600'
+                                    : 'bg-violet-50 border-violet-200 text-violet-700'
                                 }`}
                               >
+                                {/* Delivery number */}
+                                <span className={`text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold ${
+                                  d.isFinal ? 'bg-emerald-600 text-white' : 'bg-violet-200 text-violet-800'
+                                }`}>{di + 1}</span>
                                 {d.isFinal && (
                                   <span className="material-symbols-outlined text-emerald-600 text-[12px]" style={{ fontVariationSettings: "'FILL' 1" }}>flag</span>
                                 )}
                                 <span className="font-data-mono">{formatDateSafe(d.date)}</span>
-                                <span className="font-bold">{d.quantity} {unitName}</span>
+                                <span className="font-bold text-sm">{d.quantity} {unitName}</span>
                                 {d.isFinal && (
                                   <span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full font-bold tracking-wide">FINAL</span>
                                 )}
                               </div>
                             ))}
+                            {/* Total strip if more than 1 */}
+                            {outwardRaw.deliveries!.length > 1 && (
+                              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold border bg-gray-100 border-gray-300 text-gray-700">
+                                <span className="material-symbols-outlined text-[12px]" style={{ fontVariationSettings: "'FILL' 1" }}>sigma</span>
+                                Total: {outwardRaw.quantity} {unitName}
+                              </div>
+                            )}
                           </div>
                         ) : (
-                          // Single delivery (old format or single slot)
+                          // Old format — no deliveries array, just show dateDelivered
                           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border bg-emerald-100 border-emerald-300 text-emerald-800 w-fit">
                             <span className="material-symbols-outlined text-emerald-600 text-[12px]" style={{ fontVariationSettings: "'FILL' 1" }}>flag</span>
                             <span className="font-data-mono">{formatDateSafe(finalDeliveryDate)}</span>

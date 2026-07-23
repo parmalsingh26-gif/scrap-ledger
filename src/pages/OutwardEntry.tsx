@@ -712,7 +712,7 @@ export function OutwardEntry() {
               </div>
             </div>
 
-            {/* ── Section 4: Delivery Schedule ─────────────────────────────────── */}
+            {/* ── Section 4: Delivery Schedule ──────────────────────────────── */}
             <div className="bg-gradient-to-br from-violet-50/60 to-indigo-50/60 border border-violet-200 rounded-2xl p-6 relative overflow-hidden">
               <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-violet-500 to-indigo-500 rounded-l-2xl"></div>
 
@@ -722,20 +722,23 @@ export function OutwardEntry() {
                   <h3 className="font-label-md text-label-md text-on-surface flex items-center gap-2">
                     <span className="material-symbols-outlined text-violet-600 text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>local_shipping</span>
                     Delivery Schedule
-                    <span className="text-xs font-normal text-violet-500 ml-1">— Jis din kuch bhi gaya, add karo</span>
+                    <span className="bg-violet-200 text-violet-800 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                      {deliveries.length} {deliveries.length === 1 ? 'date' : 'dates'}
+                    </span>
                   </h3>
                   <p className="text-xs text-outline mt-0.5 ml-7">
-                    Ek lot ki delivery alag alag dates mein ho sakti hai. Final delivery ko ✅ mark karo.
+                    Jis din kuch bhi gaya, ek alag row add karo. Final delivery ko ✅ mark karo.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-violet-100 border border-violet-300 rounded-lg">
-                  <span className="material-symbols-outlined text-violet-600 text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>scale</span>
+                  <span className="material-symbols-outlined text-violet-600 text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>sigma</span>
                   <span className="text-xs font-bold text-violet-700">Total: {totalQtyFromDeliveries} {selectedUnitName || 'unit'}</span>
                 </div>
               </div>
 
               {/* Column Headers */}
-              <div className="grid grid-cols-[1fr_120px_100px_auto] gap-3 mb-2 px-1">
+              <div className="grid grid-cols-[32px_1fr_120px_100px_auto] gap-3 mb-2 px-1">
+                <p className="text-[10px] font-bold text-outline uppercase tracking-wider">#</p>
                 <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Date</p>
                 <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Quantity</p>
                 <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wider flex items-center gap-1">
@@ -749,12 +752,19 @@ export function OutwardEntry() {
                 {deliveries.map((slot, idx) => (
                   <div
                     key={idx}
-                    className={`grid grid-cols-[1fr_120px_100px_auto] gap-3 items-center p-3 rounded-xl border transition-all ${
+                    className={`grid grid-cols-[32px_1fr_120px_100px_auto] gap-3 items-center p-3 rounded-xl border transition-all ${
                       slot.isFinal
                         ? 'bg-emerald-50 border-emerald-300 shadow-sm'
                         : 'bg-white/70 border-outline-variant/30'
                     }`}
                   >
+                    {/* Row Number */}
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                      slot.isFinal ? 'bg-emerald-500 text-white' : 'bg-violet-100 text-violet-700'
+                    }`}>
+                      {idx + 1}
+                    </div>
+
                     {/* Date */}
                     <div className="relative">
                       <input
@@ -828,22 +838,42 @@ export function OutwardEntry() {
                 Add Another Delivery Date
               </button>
 
-              {/* Summary strip */}
-              {deliveries.length > 1 && (
-                <div className="mt-4 pt-4 border-t border-violet-200 flex flex-wrap gap-2">
+              {/* ── Live Preview — HAMESHA dikhega ───────────────────────────── */}
+              <div className="mt-5 pt-4 border-t border-violet-200">
+                <p className="text-[10px] font-bold text-violet-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[12px]" style={{ fontVariationSettings: "'FILL' 1" }}>preview</span>
+                  Live Preview — Date-wise Breakup
+                  <span className="font-normal text-violet-400">(save hone ke baad aisi hi dikhegi)</span>
+                </p>
+                <div className="flex flex-wrap gap-2">
                   {deliveries.map((d, i) => (
-                    <div key={i} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border ${
-                      d.isFinal
-                        ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
-                        : 'bg-white border-outline-variant/40 text-on-surface-variant'
-                    }`}>
-                      {d.isFinal && <span className="text-emerald-600">🏁</span>}
-                      <span>{d.date ? new Date(d.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}</span>
-                      <span className="font-data-mono font-bold">{d.quantity || 0} {selectedUnitName}</span>
+                    <div
+                      key={i}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold border shadow-sm transition-all ${
+                        d.isFinal
+                          ? 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                          : 'bg-violet-50 border-violet-300 text-violet-800'
+                      }`}
+                    >
+                      <span className={`text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold flex-shrink-0 ${
+                        d.isFinal ? 'bg-emerald-600 text-white' : 'bg-violet-300 text-violet-900'
+                      }`}>{i + 1}</span>
+                      {d.isFinal && <span className="material-symbols-outlined text-emerald-600 text-[13px]" style={{ fontVariationSettings: "'FILL' 1" }}>flag</span>}
+                      <span className="font-data-mono font-bold">
+                        {d.date ? new Date(d.date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-- date --'}
+                      </span>
+                      <span className="font-bold text-sm">→ {d.quantity || 0} {selectedUnitName || 'unit'}</span>
+                      {d.isFinal && <span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full font-bold">FINAL</span>}
                     </div>
                   ))}
+                  {totalQtyFromDeliveries > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border bg-gray-100 border-gray-300 text-gray-700 shadow-sm">
+                      <span className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: "'FILL' 1" }}>sigma</span>
+                      Total: {totalQtyFromDeliveries} {selectedUnitName || 'unit'}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
 
             <div className="pt-6 border-t border-outline-variant/20 flex justify-end">
