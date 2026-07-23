@@ -60,7 +60,7 @@ function FolderNode({
   folder, allFolders, selected, onSelect, depth = 0
 }: {
   folder: Folder; allFolders: Folder[]; selected: string;
-  onSelect: (path: string) => void; depth?: number;
+  onSelect: (path: string) => void; depth?: number; key?: string | number;
 }) {
   const children = allFolders.filter(f => f.parent === folder.path);
   const [open, setOpen] = useState(true);

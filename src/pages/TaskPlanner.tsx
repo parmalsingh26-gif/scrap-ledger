@@ -885,6 +885,7 @@ interface TaskCardProps {
   onDelete?: () => void;
   onSelectBulk: () => void;
   onToggleSubtask: (subId: string) => void;
+  key?: string | number;
 }
 
 function TaskCard({ task: t, overdue, bulkMode, selected, onToggle, onEdit, onDelete, onSelectBulk, onToggleSubtask }: TaskCardProps) {
