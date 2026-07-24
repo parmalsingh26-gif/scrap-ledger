@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import mcrData from '../../Material_Condemnation_Report.json';
+import { McrSummary } from '../components/McrSummary';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -849,9 +850,10 @@ async function migrateFromLocalStorage(apiBase: string): Promise<{ totalExtras: 
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-type TabId = 'lot' | 'coach' | 'wta' | 'mp';
+type TabId = 'summary' | 'lot' | 'coach' | 'wta' | 'mp';
 
-const TABS: { id: TabId; label: string; icon: string; count: number }[] = [
+const TABS: { id: TabId; label: string; icon: string; count: number | string }[] = [
+  { id: 'summary', label: 'Summary Analytics', icon: 'analytics', count: '8' },
   { id: 'lot', label: 'Lot Material', icon: 'inventory_2', count: (mcrData.lotMaterialPosition as any[]).length },
   { id: 'coach', label: 'Coach', icon: 'train', count: (mcrData.coachPosition as any[]).length },
   { id: 'wta', label: 'WTA', icon: 'local_shipping', count: (mcrData.wtaPosition as any[]).length },
@@ -859,6 +861,7 @@ const TABS: { id: TabId; label: string; icon: string; count: number }[] = [
 ];
 
 const tabColors: Record<TabId, string> = {
+  summary: 'from-orange-500 to-red-600',
   lot: 'from-blue-600 to-primary',
   coach: 'from-indigo-600 to-violet-600',
   wta: 'from-emerald-600 to-teal-600',
@@ -866,7 +869,7 @@ const tabColors: Record<TabId, string> = {
 };
 
 export function McrView() {
-  const [activeTab, setActiveTab] = useState<TabId>('lot');
+  const [activeTab, setActiveTab] = useState<TabId>('summary');
   const [migrating, setMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState<string | null>(null);
 
@@ -956,6 +959,7 @@ export function McrView() {
         </div>
 
         <div className="mt-4 glass-panel rounded-2xl p-5 shadow-sm">
+          {activeTab === 'summary' && <McrSummary />}
           {activeTab === 'lot' && <LotTab />}
           {activeTab === 'coach' && <CoachTab />}
           {activeTab === 'wta' && <WtaTab />}
