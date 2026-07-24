@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import mcrData from '../../Material_Condemnation_Report.json';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -85,22 +85,17 @@ export function StatusBadge({ status }: { status: RowStatus }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${cls}`}>{label}</span>;
 }
 
-// ─── Local Storage ────────────────────────────────────────────────────────────
+// ─── API Base ─────────────────────────────────────────────────────────────────
 
-const LS_EXTRA = (s: string) => `mcr_extra_rows_${s}`;
-const LS_EDITS = (s: string) => `mcr_edits_${s}`;
+const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5001/api';
 
-function loadExtra<T>(section: string): T[] {
-  try { return JSON.parse(localStorage.getItem(LS_EXTRA(section)) || '[]'); } catch { return []; }
-}
-function saveExtra<T>(section: string, rows: T[]) {
-  localStorage.setItem(LS_EXTRA(section), JSON.stringify(rows));
-}
-function loadEdits(section: string): Record<string, any> {
-  try { return JSON.parse(localStorage.getItem(LS_EDITS(section)) || '{}'); } catch { return {}; }
-}
-function saveEdits(section: string, edits: Record<string, any>) {
-  localStorage.setItem(LS_EDITS(section), JSON.stringify(edits));
+async function mcrApi(path: string, options?: RequestInit) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options?.headers }
+  });
+  if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+  return res.json();
 }
 
 // ─── Empty row factories ─────────────────────────────────────────────────────
@@ -112,49 +107,79 @@ function emptyCoach(): CoachRow { return { id: uid(), type: 'Coach', qty: '', co
 function emptyWta(): WtaRow { return { id: uid(), type: 'WTA', plNo: '', material: '', qty: '', unit: 'MT', railway: '', poNo: '', transporter: '', deliveryDate: '', _isNew: true }; }
 function emptyMP(): MPRow { return { id: uid(), type: 'MECH', plNo: '', material: '', qty: '', unit: 'No', scrNo: '', date: '', eAuctionDate: '', lotNo: '', purchaser: '', deliveryDate: '', _isNew: true }; }
 
-// ─── Inline Edit Row for a field ─────────────────────────────────────────────
+// ─── useSection hook — handles extras + edits for one section ─────────────────
 
-function InlineInput({ value, onChange, type = 'text', placeholder = '' }: {
-  value: string | number | null; onChange: (v: string) => void; type?: string; placeholder?: string;
-}) {
-  return (
-    <input
-      type={type}
-      defaultValue={value?.toString() ?? ''}
-      className="w-full min-w-[60px] bg-white/80 border border-primary/30 rounded-md px-1.5 py-1 text-[11px] text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary"
-      onBlur={e => onChange(e.target.value)}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
-    />
-  );
-}
+function useSection<T extends { id: string; _isNew?: boolean }>(section: string) {
+  const [extras, setExtras] = useState<T[]>([]);
+  const [edits, setEdits] = useState<Record<string, Partial<T>>>({});
+  const [loading, setLoading] = useState(true);
 
-// ─── Generic Table Component ─────────────────────────────────────────────────
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [extrasData, editsData] = await Promise.all([
+        mcrApi(`/mcr/${section}/extras`),
+        mcrApi(`/mcr/${section}/edits`)
+      ]);
+      setExtras(extrasData);
+      setEdits(editsData);
+    } catch (e) {
+      console.error(`MCR ${section} load error:`, e);
+    } finally {
+      setLoading(false);
+    }
+  }, [section]);
 
-interface ColDef<T> {
-  key: keyof T | string;
-  header: string;
-  render?: (row: T, isEditing: boolean, onChange: (field: string, val: string) => void) => React.ReactNode;
-  minWidth?: string;
+  useEffect(() => { reload(); }, [reload]);
+
+  const saveExtra = useCallback(async (row: T) => {
+    await mcrApi(`/mcr/${section}/extras`, {
+      method: 'POST',
+      body: JSON.stringify({ rowId: row.id, data: row })
+    });
+    setExtras(prev => {
+      const exists = prev.find(r => r.id === row.id);
+      return exists ? prev.map(r => r.id === row.id ? row : r) : [...prev, row];
+    });
+  }, [section]);
+
+  const deleteExtra = useCallback(async (id: string) => {
+    await mcrApi(`/mcr/${section}/extras/${id}`, { method: 'DELETE' });
+    setExtras(prev => prev.filter(r => r.id !== id));
+  }, [section]);
+
+  const saveEdit = useCallback(async (rowId: string, data: Partial<T>) => {
+    await mcrApi(`/mcr/${section}/edits`, {
+      method: 'POST',
+      body: JSON.stringify({ rowId, data })
+    });
+    setEdits(prev => ({ ...prev, [rowId]: data }));
+  }, [section]);
+
+  const deleteEdit = useCallback(async (rowId: string) => {
+    await mcrApi(`/mcr/${section}/edits/${rowId}`, { method: 'DELETE' });
+    setEdits(prev => { const n = { ...prev }; delete n[rowId]; return n; });
+  }, [section]);
+
+  return { extras, edits, loading, saveExtra, deleteExtra, saveEdit, deleteEdit };
 }
 
 // ─── Lot Tab ─────────────────────────────────────────────────────────────────
 
 function LotTab() {
   const base = mcrData.lotMaterialPosition as LotRow[];
-  const [extras, setExtras] = useState<LotRow[]>(() => loadExtra<LotRow>('lot'));
-  const [edits, setEdits] = useState<Record<string, Partial<LotRow>>>(() => loadEdits('lot'));
+  const { extras, edits, loading, saveExtra, deleteExtra, saveEdit, deleteEdit } = useSection<LotRow>('lot');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBuf, setEditBuf] = useState<Partial<LotRow>>({});
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'delivered' | 'cancelled'>('all');
   const [saved, setSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // Merge base with edits
   const allRows = useMemo(() => {
     const merged = base.map(r => ({ ...r, ...(edits[r.id] || {}) }));
     return [...merged, ...extras];
-  }, [edits, extras]);
+  }, [edits, extras, base]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -177,53 +202,32 @@ function LotTab() {
     cancelled: allRows.filter(r => getStatus(r) === 'cancelled').length,
   }), [allRows]);
 
-  const startEdit = (row: LotRow) => {
-    setEditingId(row.id);
-    setEditBuf({ ...row });
-  };
-
+  const startEdit = (row: LotRow) => { setEditingId(row.id); setEditBuf({ ...row }); };
   const cancelEdit = () => { setEditingId(null); setEditBuf({}); };
 
-  const saveEdit = (row: LotRow) => {
-    if (row._isNew) {
-      // Save to extras
-      setExtras(prev => {
-        const next = prev.map(r => r.id === row.id ? { ...r, ...editBuf } : r);
-        saveExtra('lot', next);
-        return next;
-      });
-    } else {
-      // Save to edits store
-      const newEdits = { ...edits, [row.id]: { ...(edits[row.id] || {}), ...editBuf } };
-      setEdits(newEdits);
-      saveEdits('lot', newEdits);
-    }
-    setEditingId(null);
-    setEditBuf({});
-    setSaved(row.id);
-    setTimeout(() => setSaved(null), 2000);
-  };
-
-  const updateBuf = (field: string, val: string) => {
-    setEditBuf(prev => ({ ...prev, [field]: val }));
+  const handleSaveEdit = async (row: LotRow) => {
+    setSaving(true);
+    try {
+      const merged = { ...row, ...editBuf };
+      if (row._isNew) {
+        await saveExtra(merged);
+      } else {
+        await saveEdit(row.id, editBuf);
+      }
+      setEditingId(null);
+      setEditBuf({});
+      setSaved(row.id);
+      setTimeout(() => setSaved(null), 2000);
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
   };
 
   const addRow = () => {
     const nr = emptyLot();
-    setExtras(prev => { const next = [...prev, nr]; saveExtra('lot', next); return next; });
-    setTimeout(() => startEdit(nr), 100);
-  };
-
-  const deleteExtra = (id: string) => {
-    setExtras(prev => { const next = prev.filter(r => r.id !== id); saveExtra('lot', next); return next; });
-    if (editingId === id) cancelEdit();
-  };
-
-  const deleteEdit = (id: string) => {
-    const newEdits = { ...edits };
-    delete newEdits[id];
-    setEdits(newEdits);
-    saveEdits('lot', newEdits);
+    setEditingId(nr.id);
+    setEditBuf({ ...nr });
+    // Add to extras optimistically so edit panel works
+    // It will be actually saved when user hits Save
   };
 
   const fields: { key: keyof LotRow; label: string; placeholder?: string; type?: string }[] = [
@@ -239,6 +243,8 @@ function LotTab() {
     { key: 'purchaser', label: 'Purchaser', placeholder: 'Purchaser name' },
     { key: 'deliveryDate', label: 'Delivery Date', placeholder: 'DD/MM/YYYY' },
   ];
+
+  if (loading) return <div className="flex items-center justify-center py-20 gap-3 text-outline"><span className="material-symbols-outlined animate-spin text-primary">progress_activity</span>Loading from cloud...</div>;
 
   return (
     <div className="space-y-4">
@@ -280,18 +286,20 @@ function LotTab() {
 
       {/* Edit panel */}
       {editingId && (() => {
-        const row = allRows.find(r => r.id === editingId);
-        if (!row) return null;
+        const isNewRow = !allRows.find(r => r.id === editingId);
+        const row = allRows.find(r => r.id === editingId) || { ...emptyLot(), id: editingId, _isNew: true };
         return (
           <div className="bg-gradient-to-br from-primary/5 to-secondary/5 border-2 border-primary/30 rounded-2xl p-5 shadow-lg">
             <div className="flex items-center justify-between mb-4">
               <h4 className="font-bold text-primary flex items-center gap-2">
                 <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>edit_note</span>
-                Row Edit kar rahe hain: <span className="font-mono text-sm bg-primary/10 px-2 py-0.5 rounded">{editBuf.lotNo || editBuf.material || row.id}</span>
+                {isNewRow ? 'Naya Row Add' : 'Row Edit'}:&nbsp;<span className="font-mono text-sm bg-primary/10 px-2 py-0.5 rounded">{(editBuf as any).lotNo || (editBuf as any).material || row.id}</span>
               </h4>
               <div className="flex gap-2">
-                <button onClick={() => saveEdit(row)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-bold hover:bg-emerald-600 transition-colors shadow-sm">
-                  <span className="material-symbols-outlined text-[18px]">save</span>Save
+                <button onClick={() => handleSaveEdit(row as LotRow)} disabled={saving}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-bold hover:bg-emerald-600 transition-colors shadow-sm disabled:opacity-60">
+                  {saving ? <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span> : <span className="material-symbols-outlined text-[18px]">cloud_upload</span>}
+                  Save to Cloud
                 </button>
                 <button onClick={cancelEdit} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface-container text-on-surface-variant text-sm font-medium hover:bg-error-container/20 hover:text-error transition-colors border border-outline-variant/30">
                   <span className="material-symbols-outlined text-[18px]">close</span>Cancel
@@ -305,7 +313,7 @@ function LotTab() {
                   <input
                     type={f.type || 'text'}
                     value={(editBuf[f.key] as string) ?? ''}
-                    onChange={e => updateBuf(f.key as string, e.target.value)}
+                    onChange={e => setEditBuf(p => ({ ...p, [f.key]: e.target.value }))}
                     placeholder={f.placeholder}
                     className="w-full bg-white border border-outline-variant/30 rounded-lg px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
                   />
@@ -377,15 +385,16 @@ function LotTab() {
                     </td>
                     <td className="px-3 py-2">
                       <StatusBadge status={status} />
-                      {isSaved && <span className="ml-1 text-[9px] text-emerald-600 font-bold animate-pulse">Saved!</span>}
+                      {isSaved && <span className="ml-1 text-[9px] text-emerald-600 font-bold animate-pulse">☁️ Saved!</span>}
                       {hasEdit && !isSaved && <span className="ml-1 text-[9px] text-violet-600 font-bold">Edited</span>}
+                      {isNew && !isSaved && <span className="ml-1 text-[9px] text-blue-600 font-bold">☁️ Cloud</span>}
                     </td>
                     <td className="px-3 py-2 sticky right-0 bg-inherit">
                       <div className="flex gap-1">
                         {isEditing ? (
                           <>
-                            <button onClick={() => saveEdit(row)} className="w-7 h-7 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-700 flex items-center justify-center" title="Save">
-                              <span className="material-symbols-outlined text-[16px]">save</span>
+                            <button onClick={() => handleSaveEdit(row)} disabled={saving} className="w-7 h-7 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-700 flex items-center justify-center" title="Save">
+                              {saving ? <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span> : <span className="material-symbols-outlined text-[16px]">cloud_upload</span>}
                             </button>
                             <button onClick={cancelEdit} className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center" title="Cancel">
                               <span className="material-symbols-outlined text-[16px]">close</span>
@@ -396,9 +405,14 @@ function LotTab() {
                             <button onClick={() => startEdit(row)} className="w-7 h-7 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary flex items-center justify-center transition-colors" title="Edit row">
                               <span className="material-symbols-outlined text-[16px]">edit</span>
                             </button>
-                            {(isNew || hasEdit) && (
-                              <button onClick={() => isNew ? deleteExtra(row.id) : deleteEdit(row.id)} className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center transition-colors" title={isNew ? 'Delete row' : 'Revert to original'}>
-                                <span className="material-symbols-outlined text-[16px]">{isNew ? 'delete' : 'restart_alt'}</span>
+                            {isNew && (
+                              <button onClick={() => deleteExtra(row.id)} className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center transition-colors" title="Delete row">
+                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                              </button>
+                            )}
+                            {hasEdit && (
+                              <button onClick={() => deleteEdit(row.id)} className="w-7 h-7 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-600 flex items-center justify-center transition-colors" title="Revert to original">
+                                <span className="material-symbols-outlined text-[16px]">restart_alt</span>
                               </button>
                             )}
                           </>
@@ -416,7 +430,7 @@ function LotTab() {
         </div>
         <div className="px-4 py-2.5 bg-surface-container-low/50 border-t border-outline-variant/10 flex items-center justify-between">
           <p className="text-xs text-outline"><span className="font-bold text-on-surface">{filtered.length}</span> of <span className="font-bold">{allRows.length}</span> rows shown
-            {extras.length > 0 && <span className="ml-2 text-blue-600 font-medium">• {extras.length} manually added</span>}
+            {extras.length > 0 && <span className="ml-2 text-blue-600 font-medium">• {extras.length} cloud added</span>}
             {Object.keys(edits).length > 0 && <span className="ml-2 text-violet-600 font-medium">• {Object.keys(edits).length} edited</span>}
           </p>
           <button onClick={addRow} className="flex items-center gap-1.5 text-xs text-primary font-bold hover:underline">
@@ -432,14 +446,14 @@ function LotTab() {
 
 function CoachTab() {
   const base = mcrData.coachPosition as CoachRow[];
-  const [extras, setExtras] = useState<CoachRow[]>(() => loadExtra<CoachRow>('coach'));
-  const [edits, setEdits] = useState<Record<string, Partial<CoachRow>>>(() => loadEdits('coach'));
+  const { extras, edits, loading, saveExtra, deleteExtra, saveEdit, deleteEdit } = useSection<CoachRow>('coach');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBuf, setEditBuf] = useState<Partial<CoachRow>>({});
   const [search, setSearch] = useState('');
   const [saved, setSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const allRows = useMemo(() => [...base.map(r => ({ ...r, ...(edits[r.id] || {}) })), ...extras], [edits, extras]);
+  const allRows = useMemo(() => [...base.map(r => ({ ...r, ...(edits[r.id] || {}) })), ...extras], [edits, extras, base]);
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return allRows.filter(r => !q || (r.coachNo || '').toLowerCase().includes(q) || (r.lotNo || '').toLowerCase().includes(q) || (r.purchaser || '').toLowerCase().includes(q));
@@ -447,12 +461,19 @@ function CoachTab() {
 
   const startEdit = (row: CoachRow) => { setEditingId(row.id); setEditBuf({ ...row }); };
   const cancelEdit = () => { setEditingId(null); setEditBuf({}); };
-  const saveEdit = (row: CoachRow) => {
-    if (row._isNew) { setExtras(prev => { const next = prev.map(r => r.id === row.id ? { ...r, ...editBuf } : r); saveExtra('coach', next); return next; }); }
-    else { const ne = { ...edits, [row.id]: editBuf }; setEdits(ne); saveEdits('coach', ne); }
-    setEditingId(null); setSaved(row.id); setTimeout(() => setSaved(null), 2000);
+
+  const handleSaveEdit = async (row: CoachRow) => {
+    setSaving(true);
+    try {
+      const merged = { ...row, ...editBuf };
+      if (row._isNew) { await saveExtra(merged); }
+      else { await saveEdit(row.id, editBuf); }
+      setEditingId(null); setSaved(row.id); setTimeout(() => setSaved(null), 2000);
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
   };
-  const addRow = () => { const nr = emptyCoach(); setExtras(prev => { const n = [...prev, nr]; saveExtra('coach', n); return n; }); setTimeout(() => startEdit(nr), 100); };
+
+  const addRow = () => { const nr = emptyCoach(); setEditingId(nr.id); setEditBuf({ ...nr }); };
 
   const fields: { key: keyof CoachRow; label: string; placeholder?: string; type?: string }[] = [
     { key: 'type', label: 'Type' }, { key: 'qty', label: 'Qty', type: 'number' },
@@ -461,6 +482,8 @@ function CoachTab() {
     { key: 'lotNo', label: 'Lot No', placeholder: 'Lot Number' }, { key: 'purchaser', label: 'Purchaser' },
     { key: 'deliveryDate', label: 'Delivery Date' },
   ];
+
+  if (loading) return <div className="flex items-center justify-center py-20 gap-3 text-outline"><span className="material-symbols-outlined animate-spin text-indigo-600">progress_activity</span>Loading from cloud...</div>;
 
   return (
     <div className="space-y-4">
@@ -474,13 +497,15 @@ function CoachTab() {
         </button>
       </div>
       {editingId && (() => {
-        const row = allRows.find(r => r.id === editingId); if (!row) return null;
+        const row = allRows.find(r => r.id === editingId) || { ...emptyCoach(), id: editingId, _isNew: true };
         return (
           <div className="bg-indigo-50 border-2 border-indigo-300 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h4 className="font-bold text-indigo-700 flex items-center gap-2"><span className="material-symbols-outlined text-[20px]">edit_note</span>Edit Row</h4>
               <div className="flex gap-2">
-                <button onClick={() => saveEdit(row)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-bold"><span className="material-symbols-outlined text-[18px]">save</span>Save</button>
+                <button onClick={() => handleSaveEdit(row as CoachRow)} disabled={saving} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-bold disabled:opacity-60">
+                  {saving ? <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span> : <span className="material-symbols-outlined text-[18px]">cloud_upload</span>}Save to Cloud
+                </button>
                 <button onClick={cancelEdit} className="px-4 py-2 rounded-xl border text-sm text-on-surface-variant">Cancel</button>
               </div>
             </div>
@@ -522,17 +547,14 @@ function CoachTab() {
                     <td className="px-3 py-2 font-mono font-bold text-[10px]">{row.lotNo || '—'}</td>
                     <td className="px-3 py-2">{row.purchaser || <span className="text-outline/40">—</span>}</td>
                     <td className="px-3 py-2 text-outline text-[10px]">{row.deliveryDate?.toString() || <span className="text-amber-500 font-bold">Not delivered</span>}</td>
-                    <td className="px-3 py-2"><StatusBadge status={status} />{saved === row.id && <span className="ml-1 text-[9px] text-emerald-600 font-bold">Saved!</span>}</td>
+                    <td className="px-3 py-2"><StatusBadge status={status} />{saved === row.id && <span className="ml-1 text-[9px] text-emerald-600 font-bold">☁️ Saved!</span>}</td>
                     <td className="px-3 py-2">
                       <div className="flex gap-1">
                         <button onClick={() => startEdit(row)} className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center" title="Edit">
                           <span className="material-symbols-outlined text-[16px]">edit</span>
                         </button>
-                        {(isNew || hasEdit) && (
-                          <button onClick={() => { if (isNew) { setExtras(p => { const n = p.filter(r => r.id !== row.id); saveExtra('coach', n); return n; }); } else { const ne = { ...edits }; delete ne[row.id]; setEdits(ne); saveEdits('coach', ne); } }} className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center">
-                            <span className="material-symbols-outlined text-[16px]">{isNew ? 'delete' : 'restart_alt'}</span>
-                          </button>
-                        )}
+                        {isNew && <button onClick={() => deleteExtra(row.id)} className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">delete</span></button>}
+                        {hasEdit && <button onClick={() => deleteEdit(row.id)} className="w-7 h-7 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-600 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">restart_alt</span></button>}
                       </div>
                     </td>
                   </tr>
@@ -555,23 +577,28 @@ function CoachTab() {
 
 function WtaTab() {
   const base = mcrData.wtaPosition as WtaRow[];
-  const [extras, setExtras] = useState<WtaRow[]>(() => loadExtra<WtaRow>('wta'));
-  const [edits, setEdits] = useState<Record<string, Partial<WtaRow>>>(() => loadEdits('wta'));
+  const { extras, edits, loading, saveExtra, deleteExtra, saveEdit, deleteEdit } = useSection<WtaRow>('wta');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBuf, setEditBuf] = useState<Partial<WtaRow>>({});
   const [search, setSearch] = useState('');
   const [saved, setSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const allRows = useMemo(() => [...base.map(r => ({ ...r, ...(edits[r.id] || {}) })), ...extras], [edits, extras]);
+  const allRows = useMemo(() => [...base.map(r => ({ ...r, ...(edits[r.id] || {}) })), ...extras], [edits, extras, base]);
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return allRows.filter(r => !q || (r.material || '').toLowerCase().includes(q) || ((r as any).transporter || '').toLowerCase().includes(q) || ((r as any).railway || '').toLowerCase().includes(q));
   }, [allRows, search]);
 
-  const saveEdit = (row: WtaRow) => {
-    if (row._isNew) { setExtras(prev => { const n = prev.map(r => r.id === row.id ? { ...r, ...editBuf } : r); saveExtra('wta', n); return n; }); }
-    else { const ne = { ...edits, [row.id]: editBuf }; setEdits(ne); saveEdits('wta', ne); }
-    setEditingId(null); setSaved(row.id); setTimeout(() => setSaved(null), 2000);
+  const handleSaveEdit = async (row: WtaRow) => {
+    setSaving(true);
+    try {
+      const merged = { ...row, ...editBuf };
+      if (row._isNew) { await saveExtra(merged); }
+      else { await saveEdit(row.id, editBuf); }
+      setEditingId(null); setSaved(row.id); setTimeout(() => setSaved(null), 2000);
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
   };
 
   const fields: { key: string; label: string; placeholder?: string; type?: string }[] = [
@@ -581,6 +608,8 @@ function WtaTab() {
     { key: 'deliveryDate', label: 'Delivery Date' },
   ];
 
+  if (loading) return <div className="flex items-center justify-center py-20 gap-3 text-outline"><span className="material-symbols-outlined animate-spin text-emerald-600">progress_activity</span>Loading from cloud...</div>;
+
   return (
     <div className="space-y-4">
       <div className="flex gap-3">
@@ -588,19 +617,21 @@ function WtaTab() {
           <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-outline text-[18px]">search</span>
           <input className="w-full pl-9 pr-4 py-2.5 rounded-xl glass-input text-sm focus:outline-none" placeholder="Material, transporter, railway..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <button onClick={() => { const nr = emptyWta(); setExtras(p => { const n = [...p, nr]; saveExtra('wta', n); return n; }); setTimeout(() => { setEditingId(nr.id); setEditBuf({ ...nr }); }, 100); }}
+        <button onClick={() => { const nr = emptyWta(); setEditingId(nr.id); setEditBuf({ ...nr }); }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-bold shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all whitespace-nowrap">
           <span className="material-symbols-outlined text-[18px]">add</span>Add Row
         </button>
       </div>
       {editingId && (() => {
-        const row = allRows.find(r => r.id === editingId); if (!row) return null;
+        const row = allRows.find(r => r.id === editingId) || { ...emptyWta(), id: editingId, _isNew: true };
         return (
           <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h4 className="font-bold text-emerald-700 flex items-center gap-2"><span className="material-symbols-outlined text-[20px]">edit_note</span>Edit WTA Row</h4>
               <div className="flex gap-2">
-                <button onClick={() => saveEdit(row)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-bold"><span className="material-symbols-outlined text-[18px]">save</span>Save</button>
+                <button onClick={() => handleSaveEdit(row as WtaRow)} disabled={saving} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-bold disabled:opacity-60">
+                  {saving ? <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span> : <span className="material-symbols-outlined text-[18px]">cloud_upload</span>}Save to Cloud
+                </button>
                 <button onClick={() => setEditingId(null)} className="px-4 py-2 rounded-xl border text-sm text-on-surface-variant">Cancel</button>
               </div>
             </div>
@@ -642,11 +673,12 @@ function WtaTab() {
                     <td className="px-3 py-2 font-mono text-[10px]">{(row as any).poNo || '—'}</td>
                     <td className="px-3 py-2">{(row as any).transporter || '—'}</td>
                     <td className="px-3 py-2 text-outline text-[10px]">{row.deliveryDate?.toString() || <span className="text-amber-500 font-bold">Not delivered</span>}</td>
-                    <td className="px-3 py-2"><StatusBadge status={status} />{saved === row.id && <span className="ml-1 text-[9px] text-emerald-600 font-bold">Saved!</span>}</td>
+                    <td className="px-3 py-2"><StatusBadge status={status} />{saved === row.id && <span className="ml-1 text-[9px] text-emerald-600 font-bold">☁️ Saved!</span>}</td>
                     <td className="px-3 py-2">
                       <div className="flex gap-1">
                         <button onClick={() => { setEditingId(row.id); setEditBuf({ ...row }); }} className="w-7 h-7 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">edit</span></button>
-                        {(isNew || hasEdit) && <button onClick={() => { if (isNew) { setExtras(p => { const n = p.filter(r => r.id !== row.id); saveExtra('wta', n); return n; }); } else { const ne = { ...edits }; delete ne[row.id]; setEdits(ne); saveEdits('wta', ne); } }} className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">{isNew ? 'delete' : 'restart_alt'}</span></button>}
+                        {isNew && <button onClick={() => deleteExtra(row.id)} className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">delete</span></button>}
+                        {hasEdit && <button onClick={() => deleteEdit(row.id)} className="w-7 h-7 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-600 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">restart_alt</span></button>}
                       </div>
                     </td>
                   </tr>
@@ -666,23 +698,28 @@ function WtaTab() {
 
 function MPTab() {
   const base = mcrData.mAndPItem as MPRow[];
-  const [extras, setExtras] = useState<MPRow[]>(() => loadExtra<MPRow>('mp'));
-  const [edits, setEdits] = useState<Record<string, Partial<MPRow>>>(() => loadEdits('mp'));
+  const { extras, edits, loading, saveExtra, deleteExtra, saveEdit, deleteEdit } = useSection<MPRow>('mp');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBuf, setEditBuf] = useState<Partial<MPRow>>({});
   const [search, setSearch] = useState('');
   const [saved, setSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const allRows = useMemo(() => [...base.map(r => ({ ...r, ...(edits[r.id] || {}) })), ...extras], [edits, extras]);
+  const allRows = useMemo(() => [...base.map(r => ({ ...r, ...(edits[r.id] || {}) })), ...extras], [edits, extras, base]);
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return allRows.filter(r => !q || (r.material || '').toLowerCase().includes(q) || (r.lotNo || '').toLowerCase().includes(q) || (r.purchaser || '').toLowerCase().includes(q));
   }, [allRows, search]);
 
-  const saveEdit = (row: MPRow) => {
-    if (row._isNew) { setExtras(prev => { const n = prev.map(r => r.id === row.id ? { ...r, ...editBuf } : r); saveExtra('mp', n); return n; }); }
-    else { const ne = { ...edits, [row.id]: editBuf }; setEdits(ne); saveEdits('mp', ne); }
-    setEditingId(null); setSaved(row.id); setTimeout(() => setSaved(null), 2000);
+  const handleSaveEdit = async (row: MPRow) => {
+    setSaving(true);
+    try {
+      const merged = { ...row, ...editBuf };
+      if (row._isNew) { await saveExtra(merged); }
+      else { await saveEdit(row.id, editBuf); }
+      setEditingId(null); setSaved(row.id); setTimeout(() => setSaved(null), 2000);
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
   };
 
   const fields: { key: string; label: string; placeholder?: string; type?: string }[] = [
@@ -692,6 +729,8 @@ function MPTab() {
     { key: 'lotNo', label: 'Lot No' }, { key: 'purchaser', label: 'Purchaser' }, { key: 'deliveryDate', label: 'Delivery Date' },
   ];
 
+  if (loading) return <div className="flex items-center justify-center py-20 gap-3 text-outline"><span className="material-symbols-outlined animate-spin text-violet-600">progress_activity</span>Loading from cloud...</div>;
+
   return (
     <div className="space-y-4">
       <div className="flex gap-3">
@@ -699,19 +738,21 @@ function MPTab() {
           <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-outline text-[18px]">search</span>
           <input className="w-full pl-9 pr-4 py-2.5 rounded-xl glass-input text-sm focus:outline-none" placeholder="Material, lot no, purchaser..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <button onClick={() => { const nr = emptyMP(); setExtras(p => { const n = [...p, nr]; saveExtra('mp', n); return n; }); setTimeout(() => { setEditingId(nr.id); setEditBuf({ ...nr }); }, 100); }}
+        <button onClick={() => { const nr = emptyMP(); setEditingId(nr.id); setEditBuf({ ...nr }); }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-700 text-white text-sm font-bold shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all whitespace-nowrap">
           <span className="material-symbols-outlined text-[18px]">add</span>Add Row
         </button>
       </div>
       {editingId && (() => {
-        const row = allRows.find(r => r.id === editingId); if (!row) return null;
+        const row = allRows.find(r => r.id === editingId) || { ...emptyMP(), id: editingId, _isNew: true };
         return (
           <div className="bg-violet-50 border-2 border-violet-300 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-4">
               <h4 className="font-bold text-violet-700 flex items-center gap-2"><span className="material-symbols-outlined text-[20px]">edit_note</span>Edit M&P Row</h4>
               <div className="flex gap-2">
-                <button onClick={() => saveEdit(row)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-bold"><span className="material-symbols-outlined text-[18px]">save</span>Save</button>
+                <button onClick={() => handleSaveEdit(row as MPRow)} disabled={saving} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-bold disabled:opacity-60">
+                  {saving ? <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span> : <span className="material-symbols-outlined text-[18px]">cloud_upload</span>}Save to Cloud
+                </button>
                 <button onClick={() => setEditingId(null)} className="px-4 py-2 rounded-xl border text-sm text-on-surface-variant">Cancel</button>
               </div>
             </div>
@@ -755,11 +796,12 @@ function MPTab() {
                     <td className="px-3 py-2 font-mono font-bold text-[10px]">{row.lotNo || '—'}</td>
                     <td className="px-3 py-2 max-w-[130px] truncate">{row.purchaser || <span className="text-outline/40">—</span>}</td>
                     <td className="px-3 py-2 text-outline text-[10px]">{row.deliveryDate?.toString() || <span className="text-amber-500 font-bold">Not delivered</span>}</td>
-                    <td className="px-3 py-2"><StatusBadge status={status} />{saved === row.id && <span className="ml-1 text-[9px] text-emerald-600 font-bold">Saved!</span>}</td>
+                    <td className="px-3 py-2"><StatusBadge status={status} />{saved === row.id && <span className="ml-1 text-[9px] text-emerald-600 font-bold">☁️ Saved!</span>}</td>
                     <td className="px-3 py-2">
                       <div className="flex gap-1">
                         <button onClick={() => { setEditingId(row.id); setEditBuf({ ...row }); }} className="w-7 h-7 rounded-lg bg-violet-50 hover:bg-violet-100 text-violet-700 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">edit</span></button>
-                        {(isNew || hasEdit) && <button onClick={() => { if (isNew) { setExtras(p => { const n = p.filter(r => r.id !== row.id); saveExtra('mp', n); return n; }); } else { const ne = { ...edits }; delete ne[row.id]; setEdits(ne); saveEdits('mp', ne); } }} className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">{isNew ? 'delete' : 'restart_alt'}</span></button>}
+                        {isNew && <button onClick={() => deleteExtra(row.id)} className="w-7 h-7 rounded-lg bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">delete</span></button>}
+                        {hasEdit && <button onClick={() => deleteEdit(row.id)} className="w-7 h-7 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-600 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">restart_alt</span></button>}
                       </div>
                     </td>
                   </tr>
@@ -773,6 +815,36 @@ function MPTab() {
       </div>
     </div>
   );
+}
+
+// ─── Migrate from localStorage helper ────────────────────────────────────────
+
+async function migrateFromLocalStorage(apiBase: string): Promise<{ totalExtras: number; totalEdits: number }> {
+  const LS_EXTRA = (s: string) => `mcr_extra_rows_${s}`;
+  const LS_EDITS = (s: string) => `mcr_edits_${s}`;
+  const sections = ['lot', 'coach', 'wta', 'mp'];
+
+  const payload: Record<string, { extras: any[]; edits: Record<string, any> }> = {};
+  let hasData = false;
+
+  for (const sec of sections) {
+    let extras: any[] = [];
+    let edits: Record<string, any> = {};
+    try { extras = JSON.parse(localStorage.getItem(LS_EXTRA(sec)) || '[]'); } catch {}
+    try { edits = JSON.parse(localStorage.getItem(LS_EDITS(sec)) || '{}'); } catch {}
+    if (extras.length > 0 || Object.keys(edits).length > 0) hasData = true;
+    payload[sec] = { extras, edits };
+  }
+
+  if (!hasData) return { totalExtras: 0, totalEdits: 0 };
+
+  const res = await fetch(`${apiBase}/mcr/migrate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sections: payload })
+  });
+  if (!res.ok) throw new Error(`Migration failed: ${await res.text()}`);
+  return res.json();
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -795,6 +867,25 @@ const tabColors: Record<TabId, string> = {
 
 export function McrView() {
   const [activeTab, setActiveTab] = useState<TabId>('lot');
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState<string | null>(null);
+
+  const handleMigrate = async () => {
+    setMigrating(true);
+    setMigrateResult(null);
+    try {
+      const result = await migrateFromLocalStorage(API_BASE);
+      if (result.totalExtras === 0 && result.totalEdits === 0) {
+        setMigrateResult('ℹ️ Is browser mein koi purana data nahi mila.');
+      } else {
+        setMigrateResult(`✅ Migration complete! ${result.totalExtras} naye rows + ${result.totalEdits} edits cloud mein upload ho gaye. Page refresh karein.`);
+      }
+    } catch (e: any) {
+      setMigrateResult(`❌ Error: ${e.message}`);
+    } finally {
+      setMigrating(false);
+    }
+  };
 
   return (
     <div className="animate-fade-in space-y-6 max-w-[1440px]">
@@ -805,22 +896,44 @@ export function McrView() {
             <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1", fontSize: '32px' }}>description</span>
             Material Condemnation Report
           </h2>
-          <p className="font-body-md text-body-md text-on-surface-variant mt-1">
-            MCR data — Pencil icon se koi bhi row edit karo | Naya row add karo | Changes browser mein save hote hain
+          <p className="font-body-md text-body-md text-on-surface-variant mt-1 flex items-center gap-2">
+            <span className="material-symbols-outlined text-emerald-500 text-[16px]">cloud_done</span>
+            Data ab MongoDB Cloud mein save hota hai — kisi bhi device se access ho sakta hai
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 items-center text-xs">
-          {[
-            { dot: 'bg-primary/20', label: 'Original data' },
-            { dot: 'bg-violet-200', label: 'Edited row' },
-            { dot: 'bg-blue-200', label: 'Manually added' },
-          ].map(l => (
-            <span key={l.label} className="flex items-center gap-1.5 text-outline">
-              <span className={`w-3 h-3 rounded-full ${l.dot} border border-outline-variant/30`}></span>{l.label}
-            </span>
-          ))}
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* Migrate button */}
+          <button
+            onClick={handleMigrate}
+            disabled={migrating}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:hover:translate-y-0"
+            title="Office computer ke browser mein jo data hai, use MongoDB mein migrate karo"
+          >
+            {migrating
+              ? <><span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>Migrating...</>
+              : <><span className="material-symbols-outlined text-[18px]">cloud_upload</span>Migrate Local Data</>
+            }
+          </button>
+          <div className="flex flex-wrap gap-2 items-center text-xs">
+            {[
+              { dot: 'bg-primary/20', label: 'Original data' },
+              { dot: 'bg-violet-200', label: 'Edited row' },
+              { dot: 'bg-blue-200', label: 'Cloud added' },
+            ].map(l => (
+              <span key={l.label} className="flex items-center gap-1.5 text-outline">
+                <span className={`w-3 h-3 rounded-full ${l.dot} border border-outline-variant/30`}></span>{l.label}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* Migration result message */}
+      {migrateResult && (
+        <div className={`p-4 rounded-xl text-sm font-medium border ${migrateResult.startsWith('✅') ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : migrateResult.startsWith('ℹ️') ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+          {migrateResult}
+        </div>
+      )}
 
       {/* Tabs */}
       <div>
@@ -856,11 +969,11 @@ export function McrView() {
         <div>
           <p className="font-bold mb-1">💡 Kaise use karein?</p>
           <ul className="space-y-0.5 text-xs list-disc list-inside text-blue-700">
-            <li><strong>✏️ Pencil button</strong> dabao kisi bhi row pe — edit panel khulega neeche</li>
-            <li>Sab fields fill karo → <strong>Save button</strong> dabao → row update hoga aur <span className="text-violet-600 font-bold">purple highlight</span> mein dikhega</li>
-            <li><strong>+ Add Row</strong> se naya row add karo (blank) — fir edit karo</li>
+            <li><strong>✏️ Pencil button</strong> dabao kisi bhi row pe — edit panel khulega</li>
+            <li>Sab fields fill karo → <strong>☁️ Save to Cloud</strong> dabao → data MongoDB mein save hoga</li>
+            <li><strong>+ Add Row</strong> se naya row add karo → Save karo → har device pe dikhega</li>
+            <li><strong>🟠 Migrate Local Data</strong> button: Office computer pe click karo — purani localStorage entries cloud mein chali jayengi</li>
             <li><strong>↺ Revert</strong> button se edited row original ho jaayega</li>
-            <li>Yahan se save kiye data ko <strong>Outward Entry</strong> mein material/lot name se search kar sako</li>
           </ul>
         </div>
       </div>
@@ -885,17 +998,10 @@ export interface McrLotSuggestion {
   section: 'lot' | 'mp';
 }
 
+// getMcrLots now uses base JSON only (extras/edits are cloud — async)
 export function getMcrLots(): McrLotSuggestion[] {
   const lotBase = mcrData.lotMaterialPosition as LotRow[];
   const mpBase = mcrData.mAndPItem as MPRow[];
-
-  const lotEdits = loadEdits('lot');
-  const mpEdits = loadEdits('mp');
-  const extraLot = loadExtra<LotRow>('lot');
-  const extraMp = loadExtra<MPRow>('mp');
-
-  const lotRows = [...lotBase.map(r => ({ ...r, ...(lotEdits[r.id] || {}) })), ...extraLot];
-  const mpRows = [...mpBase.map(r => ({ ...r, ...(mpEdits[r.id] || {}) })), ...extraMp];
 
   const toSuggestion = (r: LotRow | MPRow, section: 'lot' | 'mp'): McrLotSuggestion => ({
     id: r.id,
@@ -913,7 +1019,7 @@ export function getMcrLots(): McrLotSuggestion[] {
   });
 
   return [
-    ...lotRows.map(r => toSuggestion(r, 'lot')),
-    ...mpRows.map(r => toSuggestion(r, 'mp')),
+    ...lotBase.map(r => toSuggestion(r, 'lot')),
+    ...mpBase.map(r => toSuggestion(r, 'mp')),
   ];
 }

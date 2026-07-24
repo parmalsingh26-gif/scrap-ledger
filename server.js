@@ -832,6 +832,157 @@ app.get('/api/cloudinary/usage', async (req, res) => {
   }
 });
 
+// ========== MCR View — MongoDB Models ==========
+// Stores extra (new) rows added by user
+const McrExtraSchema = new mongoose.Schema({
+  section: { type: String, required: true, enum: ['lot', 'coach', 'wta', 'mp'] },
+  rowId:   { type: String, required: true }, // client-side generated uid
+  data:    { type: mongoose.Schema.Types.Mixed, required: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+McrExtraSchema.index({ section: 1, rowId: 1 }, { unique: true });
+const McrExtra = mongoose.model('McrExtra', McrExtraSchema);
+
+// Stores edits made to base JSON rows
+const McrEditSchema = new mongoose.Schema({
+  section: { type: String, required: true, enum: ['lot', 'coach', 'wta', 'mp'] },
+  rowId:   { type: String, required: true }, // original row id from JSON
+  data:    { type: mongoose.Schema.Types.Mixed, required: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+McrEditSchema.index({ section: 1, rowId: 1 }, { unique: true });
+const McrEdit = mongoose.model('McrEdit', McrEditSchema);
+
+// ========== MCR View — API Routes ==========
+
+// GET all extras for a section
+app.get('/api/mcr/:section/extras', async (req, res) => {
+  try {
+    const docs = await McrExtra.find({ section: req.params.section }, '-_id -__v').sort('createdAt');
+    res.json(docs.map(d => ({ ...d.data, id: d.rowId, _isNew: true })));
+  } catch (err) {
+    console.error('MCR extras GET error:', err);
+    res.status(500).json({ error: 'Failed to fetch MCR extras' });
+  }
+});
+
+// POST — add or update an extra row
+app.post('/api/mcr/:section/extras', async (req, res) => {
+  try {
+    const { rowId, data } = req.body;
+    if (!rowId) return res.status(400).json({ error: 'rowId required' });
+    await McrExtra.findOneAndUpdate(
+      { section: req.params.section, rowId },
+      { section: req.params.section, rowId, data, updatedAt: new Date() },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('MCR extras POST error:', err);
+    res.status(500).json({ error: 'Failed to save MCR extra' });
+  }
+});
+
+// DELETE an extra row
+app.delete('/api/mcr/:section/extras/:rowId', async (req, res) => {
+  try {
+    await McrExtra.findOneAndDelete({ section: req.params.section, rowId: req.params.rowId });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('MCR extras DELETE error:', err);
+    res.status(500).json({ error: 'Failed to delete MCR extra' });
+  }
+});
+
+// GET all edits for a section
+app.get('/api/mcr/:section/edits', async (req, res) => {
+  try {
+    const docs = await McrEdit.find({ section: req.params.section }, '-_id -__v');
+    // Return as { rowId: editData } map
+    const result = {};
+    docs.forEach(d => { result[d.rowId] = d.data; });
+    res.json(result);
+  } catch (err) {
+    console.error('MCR edits GET error:', err);
+    res.status(500).json({ error: 'Failed to fetch MCR edits' });
+  }
+});
+
+// POST — save an edit for a base row
+app.post('/api/mcr/:section/edits', async (req, res) => {
+  try {
+    const { rowId, data } = req.body;
+    if (!rowId) return res.status(400).json({ error: 'rowId required' });
+    await McrEdit.findOneAndUpdate(
+      { section: req.params.section, rowId },
+      { section: req.params.section, rowId, data, updatedAt: new Date() },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('MCR edits POST error:', err);
+    res.status(500).json({ error: 'Failed to save MCR edit' });
+  }
+});
+
+// DELETE an edit (revert to original)
+app.delete('/api/mcr/:section/edits/:rowId', async (req, res) => {
+  try {
+    await McrEdit.findOneAndDelete({ section: req.params.section, rowId: req.params.rowId });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('MCR edits DELETE error:', err);
+    res.status(500).json({ error: 'Failed to delete MCR edit' });
+  }
+});
+
+// POST — Bulk migrate localStorage data to MongoDB
+app.post('/api/mcr/migrate', async (req, res) => {
+  try {
+    const { sections } = req.body;
+    // sections = { lot: { extras: [...], edits: {...} }, coach: {...}, wta: {...}, mp: {...} }
+    let totalExtras = 0, totalEdits = 0;
+    
+    for (const [section, sectionData] of Object.entries(sections || {})) {
+      const { extras = [], edits = {} } = sectionData;
+      
+      // Bulk upsert extras
+      if (extras.length > 0) {
+        const extraOps = extras.map(row => ({
+          updateOne: {
+            filter: { section, rowId: row.id },
+            update: { $set: { section, rowId: row.id, data: row, updatedAt: new Date() } },
+            upsert: true
+          }
+        }));
+        await McrExtra.bulkWrite(extraOps, { ordered: false });
+        totalExtras += extras.length;
+      }
+      
+      // Bulk upsert edits
+      const editEntries = Object.entries(edits);
+      if (editEntries.length > 0) {
+        const editOps = editEntries.map(([rowId, data]) => ({
+          updateOne: {
+            filter: { section, rowId },
+            update: { $set: { section, rowId, data, updatedAt: new Date() } },
+            upsert: true
+          }
+        }));
+        await McrEdit.bulkWrite(editOps, { ordered: false });
+        totalEdits += editEntries.length;
+      }
+    }
+    
+    res.json({ success: true, totalExtras, totalEdits });
+  } catch (err) {
+    console.error('MCR migrate error:', err);
+    res.status(500).json({ error: 'Migration failed', details: String(err) });
+  }
+});
+
 // Serve static files from the React app
 app.use(express.static(path.join(__dirname, 'dist')));
 
