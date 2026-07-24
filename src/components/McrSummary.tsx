@@ -89,17 +89,27 @@ export function McrSummary() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
-        {SUB_TABS.map(st => (
-          <button key={st.id} onClick={() => setActiveSubTab(st.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-              activeSubTab === st.id 
-                ? 'bg-primary text-white shadow-md' 
-                : 'bg-surface-container hover:bg-primary/10 text-on-surface-variant'
-            }`}>
-            <span className="material-symbols-outlined text-[16px]">{st.icon}</span>{st.label}
+      <div className="flex justify-between items-end flex-wrap gap-4">
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin flex-1">
+          {SUB_TABS.map(st => (
+            <button key={st.id} onClick={() => setActiveSubTab(st.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                activeSubTab === st.id 
+                  ? 'bg-primary text-white shadow-md' 
+                  : 'bg-surface-container hover:bg-primary/10 text-on-surface-variant'
+              }`}>
+              <span className="material-symbols-outlined text-[16px]">{st.icon}</span>{st.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2 pb-2">
+          <button onClick={() => import('../utils/exportMcr').then(m => m.exportMcrToExcel(allRows))} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 hover:-translate-y-0.5 hover:shadow-sm transition-all whitespace-nowrap shadow-sm">
+            <span className="material-symbols-outlined text-[16px]">table_chart</span>Export Excel
           </button>
-        ))}
+          <button onClick={() => import('../utils/exportMcr').then(m => m.exportMcrToPdf(allRows))} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 text-red-700 border border-red-200 text-xs font-bold hover:bg-red-100 hover:-translate-y-0.5 hover:shadow-sm transition-all whitespace-nowrap shadow-sm">
+            <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>Export PDF
+          </button>
+        </div>
       </div>
 
       <div className="bg-white/50 border border-outline-variant/30 rounded-2xl p-4 shadow-sm min-h-[500px]">
