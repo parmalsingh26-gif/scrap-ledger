@@ -32,57 +32,97 @@ export async function exportMcrToExcel(rows: ExportRow[]) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Scrap Ledger System';
   wb.created = new Date();
+  
+  const dateStr = new Date().toLocaleDateString('en-GB');
+
+  const addTitle = (sheet: ExcelJS.Worksheet, title: string, colCount: number, color: string) => {
+    sheet.mergeCells(1, 1, 1, colCount);
+    const titleCell = sheet.getCell(1, 1);
+    titleCell.value = title.toUpperCase();
+    titleCell.font = { name: 'Segoe UI', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    sheet.getRow(1).height = 35;
+
+    sheet.mergeCells(2, 1, 2, colCount);
+    const subCell = sheet.getCell(2, 1);
+    subCell.value = `Generated on: ${dateStr} | Scrap Ledger System`;
+    subCell.font = { name: 'Segoe UI', size: 10, italic: true, color: { argb: 'FF4B5563' } };
+    subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
+    subCell.alignment = { vertical: 'middle', horizontal: 'right' };
+    sheet.getRow(2).height = 20;
+  };
 
   // Create Summary Sheet
-  const summarySheet = wb.addWorksheet('Summary', { properties: { tabColor: { argb: 'FF0000FF' } } });
-  summarySheet.columns = [
-    { header: 'Section', key: 'section', width: 20 },
-    { header: 'Total Lots', key: 'total', width: 15 },
-    { header: 'Delivered', key: 'delivered', width: 15 },
-    { header: 'Pending', key: 'pending', width: 15 },
-  ];
+  const summarySheet = wb.addWorksheet('Summary', { properties: { tabColor: { argb: 'FF1F2937' } } });
+  addTitle(summarySheet, 'Material Condemnation Report - Overall Summary', 4, 'FF1F2937');
   
-  // Style headers
-  summarySheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  summarySheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+  summarySheet.getRow(3).values = ['Section', 'Total Lots', 'Delivered', 'Pending'];
+  summarySheet.getRow(3).font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+  summarySheet.getRow(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+  summarySheet.getRow(3).height = 25;
+  summarySheet.getRow(3).alignment = { vertical: 'middle', horizontal: 'center' };
+
+  summarySheet.columns = [
+    { key: 'section', width: 25 },
+    { key: 'total', width: 20 },
+    { key: 'delivered', width: 20 },
+    { key: 'pending', width: 20 },
+  ];
 
   const sections = ['lot', 'coach', 'wta', 'mp'];
-  sections.forEach(sec => {
+  sections.forEach((sec, idx) => {
     const secRows = rows.filter(r => r.section === sec);
-    summarySheet.addRow({
+    const row = summarySheet.addRow({
       section: sec.toUpperCase(),
       total: secRows.length,
       delivered: secRows.filter(r => r.status === 'delivered').length,
       pending: secRows.filter(r => r.status === 'pending').length,
     });
+    row.height = 25;
+    row.alignment = { vertical: 'middle', horizontal: 'center' };
+    row.font = { name: 'Segoe UI', size: 11 };
+    if (idx % 2 === 0) row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+    
+    // Border
+    row.eachCell(cell => { cell.border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } }; });
   });
 
   // Create detailed sheets for each section
   const sectionConfigs = [
-    { id: 'lot', name: 'Lot Material', color: 'FF3B82F6' },
-    { id: 'coach', name: 'Coach', color: 'FF6366F1' },
-    { id: 'wta', name: 'WTA', color: 'FF10B981' },
-    { id: 'mp', name: 'M&P', color: 'FF8B5CF6' }
+    { id: 'lot', name: 'Lot Material', color: 'FF2563EB' },
+    { id: 'coach', name: 'Coach', color: 'FF4F46E5' },
+    { id: 'wta', name: 'WTA', color: 'FF059669' },
+    { id: 'mp', name: 'M&P', color: 'FF7C3AED' }
   ];
 
   sectionConfigs.forEach(conf => {
-    const sheet = wb.addWorksheet(conf.name, { properties: { tabColor: { argb: conf.color } } });
-    sheet.columns = [
-      { header: 'S.No', key: 'sno', width: 8 },
-      { header: 'Type', key: 'type', width: 12 },
-      { header: 'Lot No', key: 'lotNo', width: 20 },
-      { header: 'Material', key: 'material', width: 45 },
-      { header: 'Qty', key: 'qty', width: 12 },
-      { header: 'Unit', key: 'unit', width: 10 },
-      { header: 'Purchaser', key: 'purchaser', width: 30 },
-      { header: 'Auction Date', key: 'auctionDate', width: 15 },
-      { header: 'Delivery Date', key: 'deliveryDate', width: 15 },
-      { header: 'Status', key: 'status', width: 15 },
-    ];
+    const sheet = wb.addWorksheet(conf.name, { properties: { tabColor: { argb: conf.color } }, views: [{ state: 'frozen', xSplit: 0, ySplit: 3 }] });
+    addTitle(sheet, `MCR Detailed Report - ${conf.name}`, 10, conf.color);
 
-    // Header styling
-    sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: conf.color } };
+    const headers = ['S.No', 'Type', 'Lot No', 'Material', 'Qty', 'Unit', 'Purchaser', 'Auction Date', 'Delivery Date', 'Status'];
+    const headerRow = sheet.getRow(3);
+    headerRow.values = headers;
+    headerRow.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: conf.color } };
+    headerRow.height = 25;
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    
+    sheet.columns = [
+      { key: 'sno', width: 8 },
+      { key: 'type', width: 15 },
+      { key: 'lotNo', width: 22 },
+      { key: 'material', width: 50 },
+      { key: 'qty', width: 12 },
+      { key: 'unit', width: 10 },
+      { key: 'purchaser', width: 35 },
+      { key: 'auctionDate', width: 18 },
+      { key: 'deliveryDate', width: 18 },
+      { key: 'status', width: 18 },
+    ];
+    
+    // Auto filter
+    sheet.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: 10 } };
 
     const secRows = rows.filter(r => r.section === conf.id);
     secRows.forEach((r, idx) => {
@@ -99,18 +139,32 @@ export async function exportMcrToExcel(rows: ExportRow[]) {
         status: r.status.toUpperCase()
       });
 
-      // Apply status colors
-      const color = getStatusColor(r.status);
-      row.getCell('status').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
-      row.getCell('status').font = { bold: true };
+      row.height = 22;
+      row.font = { name: 'Segoe UI', size: 10, color: { argb: 'FF1F2937' } };
+      row.alignment = { vertical: 'middle', wrapText: true };
+      
+      // Zebra striping
+      if (idx % 2 === 0) row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } }; // gray-50
+      
+      // Center alignment for specific columns
+      row.getCell('sno').alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell('qty').alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell('unit').alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell('auctionDate').alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell('deliveryDate').alignment = { vertical: 'middle', horizontal: 'center' };
+
+      // Apply status colors with bold text
+      const statusCell = row.getCell('status');
+      const statusColor = getStatusColor(r.status);
+      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: statusColor } };
+      statusCell.font = { name: 'Segoe UI', size: 10, bold: true, color: r.status === 'delivered' ? { argb: 'FF047857' } : r.status === 'pending' ? { argb: 'FFB45309' } : { argb: 'FFB91C1C' } };
+      statusCell.alignment = { vertical: 'middle', horizontal: 'center' };
       
       // Borders
       row.eachCell((cell) => {
         cell.border = {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' }
+          bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
         };
       });
     });
@@ -122,7 +176,7 @@ export async function exportMcrToExcel(rows: ExportRow[]) {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `MCR_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
+  a.download = `ScrapLedger_MCR_Advanced_${new Date().toISOString().split('T')[0]}.xlsx`;
   a.click();
   window.URL.revokeObjectURL(url);
 }
