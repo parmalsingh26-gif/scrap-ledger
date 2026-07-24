@@ -14,6 +14,7 @@ const navItems = [
   { name: 'BVP Scrap Position', path: '/bvp-scrap', icon: 'precision_manufacturing' },
   { name: 'Documents', path: '/documents', icon: 'folder_open' },
   { name: 'MCR Report', path: '/mcr', icon: 'description' },
+  { name: 'Attendance', path: '/attendance', icon: 'co_present' },
   { name: 'Task Planner', path: '/tasks', icon: 'checklist' },
   { name: 'Notebook', path: '/notebook', icon: 'menu_book' },
   { name: 'Admin Settings', path: '/admin', icon: 'admin_panel_settings' },
@@ -60,7 +61,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* SideNavBar */}
       <nav className={cn(
-        "h-screen w-64 fixed left-0 top-0 flex-col bg-white/70 dark:bg-inverse-surface/70 backdrop-blur-md border-r border-white/20 dark:border-outline-variant/10 shadow-sm z-50 transition-transform duration-300 md:flex",
+        "h-screen w-64 fixed left-0 top-0 flex-col bg-white/70 dark:bg-inverse-surface/70 backdrop-blur-md border-r border-white/20 dark:border-outline-variant/10 shadow-sm z-50 transition-transform duration-300 md:flex print:hidden",
         isMobileSidebarOpen ? "translate-x-0 flex" : "-translate-x-full",
         isDesktopSidebarOpen ? "md:translate-x-0" : "md:-translate-x-full"
       )}>
@@ -141,7 +142,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* TopNavBar */}
       <header className={cn(
-        "fixed top-0 right-0 h-16 z-30 bg-surface/80 dark:bg-inverse-surface/80 backdrop-blur-xl border-b border-white/20 dark:border-outline-variant/10 shadow-sm flex justify-between items-center px-margin-mobile md:px-margin-desktop transition-all duration-300 w-full",
+        "fixed top-0 right-0 h-16 z-30 bg-surface/80 dark:bg-inverse-surface/80 backdrop-blur-xl border-b border-white/20 dark:border-outline-variant/10 shadow-sm flex justify-between items-center px-margin-mobile md:px-margin-desktop transition-all duration-300 w-full print:hidden",
         isDesktopSidebarOpen ? "md:w-[calc(100%-256px)]" : "md:w-full"
       )}>
         <div className="flex items-center gap-4">
@@ -175,7 +176,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* Main Content Area */}
       <main className={cn(
-        "pt-20 pb-12 px-margin-mobile md:px-margin-desktop min-h-screen w-full transition-all duration-300 overflow-x-hidden",
+        "pt-20 pb-12 px-margin-mobile md:px-margin-desktop min-h-screen w-full transition-all duration-300 overflow-x-hidden print:ml-0 print:pt-2 print:px-0",
         isDesktopSidebarOpen ? "md:ml-64" : "md:ml-0"
       )}>
         <div className="max-w-[1440px] mx-auto">

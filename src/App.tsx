@@ -19,6 +19,7 @@ import { AuthProvider, useAuth } from './components/AuthProvider';
 import { SyncStatus } from './components/SyncStatus';
 import { DocumentManager } from './pages/DocumentManager';
 import { McrView } from './pages/McrView';
+import { AttendanceTimesheet } from './pages/AttendanceTimesheet';
 
 function AppContent() {
   const { isLoggedIn } = useAuth();
@@ -39,6 +40,7 @@ function AppContent() {
           <Route path="/bvp-scrap" element={<BvpScrapPosition />} />
           <Route path="/documents" element={<DocumentManager />} />
           <Route path="/mcr" element={<McrView />} />
+          <Route path="/attendance" element={<AttendanceTimesheet />} />
           <Route path="/admin" element={<AdminSettings />} />
           <Route path="/tasks" element={<TaskPlanner />} />
           <Route path="/notebook" element={<NoteBook />} />

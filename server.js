@@ -876,7 +876,7 @@ app.post('/api/mcr/:section/extras', async (req, res) => {
     await McrExtra.findOneAndUpdate(
       { section: req.params.section, rowId },
       { section: req.params.section, rowId, data, updatedAt: new Date() },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
     res.json({ success: true });
   } catch (err) {
@@ -918,7 +918,7 @@ app.post('/api/mcr/:section/edits', async (req, res) => {
     await McrEdit.findOneAndUpdate(
       { section: req.params.section, rowId },
       { section: req.params.section, rowId, data, updatedAt: new Date() },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
     res.json({ success: true });
   } catch (err) {
@@ -983,8 +983,62 @@ app.post('/api/mcr/migrate', async (req, res) => {
   }
 });
 
+// ========== Attendance Register Schema ==========
+const AttendanceEmployeeSchema = new mongoose.Schema({
+  id: String,
+  sr: Number,
+  name: String,
+  pf: String,
+  tno: String,
+  category: String,
+  workOrder: String,
+  status: [String],
+}, { _id: false });
+
+const AttendanceRegisterSchema = new mongoose.Schema({
+  year: { type: Number, required: true },
+  month: { type: Number, required: true }, // 0-indexed (0=Jan, 6=Jul)
+  employees: [AttendanceEmployeeSchema],
+  updatedAt: { type: Date, default: Date.now },
+});
+AttendanceRegisterSchema.index({ year: 1, month: 1 }, { unique: true });
+const AttendanceRegister = mongoose.model('AttendanceRegister', AttendanceRegisterSchema);
+
+// GET — fetch attendance employees for a given year & month
+app.get('/api/attendance/:year/:month', async (req, res) => {
+  try {
+    const year = parseInt(req.params.year, 10);
+    const month = parseInt(req.params.month, 10);
+    const doc = await AttendanceRegister.findOne({ year, month });
+    res.json(doc ? doc.employees : []);
+  } catch (err) {
+    console.error('Attendance GET error:', err);
+    res.status(500).json({ error: 'Failed to fetch attendance data' });
+  }
+});
+
+// PUT — upsert (save/update) attendance employees for a given year & month
+app.put('/api/attendance/:year/:month', async (req, res) => {
+  try {
+    const year = parseInt(req.params.year, 10);
+    const month = parseInt(req.params.month, 10);
+    const { employees } = req.body;
+    if (!Array.isArray(employees)) return res.status(400).json({ error: 'employees array required' });
+    await AttendanceRegister.findOneAndUpdate(
+      { year, month },
+      { year, month, employees, updatedAt: new Date() },
+      { upsert: true, returnDocument: 'after' }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Attendance PUT error:', err);
+    res.status(500).json({ error: 'Failed to save attendance data' });
+  }
+});
+
 // Serve static files from the React app
 app.use(express.static(path.join(__dirname, 'dist')));
+
 
 // The "catchall" handler: for any request that doesn't
 // match one above, send back React's index.html file.
