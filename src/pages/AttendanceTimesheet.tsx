@@ -90,7 +90,20 @@ function getTsVals(e: Employee, days: number) {
 }
 
 function sortByCategory(emps: Employee[], cc: Record<string,number>): Employee[] {
-  return [...emps].sort((a,b)=>{ const co=(cc[a.category]??999)-(cc[b.category]??999); return co!==0?co:a.sr-b.sr; });
+  const sorted = [...emps].sort((a,b) => {
+    // Keep SSE at the absolute top
+    if (a.tno === 'SSE' && b.tno !== 'SSE') return -1;
+    if (b.tno === 'SSE' && a.tno !== 'SSE') return 1;
+    
+    // Sort by category
+    const co = (cc[a.category] ?? 999) - (cc[b.category] ?? 999);
+    
+    // Maintain relative order within category using original sr
+    return co !== 0 ? co : a.sr - b.sr;
+  });
+  
+  // Re-assign serial numbers sequentially so it always looks clean (1, 2, 3...)
+  return sorted.map((e, i) => ({ ...e, sr: i + 1 }));
 }
 
 function getStatusStyle(v:string) {
