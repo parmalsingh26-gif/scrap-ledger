@@ -6,9 +6,8 @@ import ExcelJS from 'exceljs';
 import { cn } from '../lib/utils';
 
 const STATUS = ["P","A","LAP","LHAP","CL","LEAVE","1/2 LEAVE","CR","NH","DUTY","SUNDAY",""];
-const TS_CATS = ["JE","Gr.-I","Gr.-III","Asst/WS"];
 const MONTHS = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
-const CAT_CODE: Record<string,number> = {'JE':1,'Gr.-I':2,'Gr.-III':4,'Asst/WS':5};
+const DEFAULT_CAT_CODES: Record<string,number> = {MCF:0,JE:1,'Gr.-I':2,'Gr.-II':3,'Gr.-III':4,'Asst/WS':5};
 
 interface Day { num: number; isSunday: boolean; }
 
@@ -83,7 +82,12 @@ function getTsVals(e: Employee, days: number) {
   const leave = e.tsOverride?.leave ?? t.leaveHrs;
   const nh    = e.tsOverride?.nh    ?? t.nhHrs;
   const duty  = e.tsOverride?.duty  ?? t.dutyHrs;
-  return { cr, leave, nh, duty, lncod: cr+leave+nh+duty, total: t.monthDutyHr };
+  const lncod=cr+leave+nh+duty; const total=t.monthDutyHr;
+  return { cr, leave, nh, duty, lncod, total, hours: total-lncod };
+}
+
+function sortByCategory(emps: Employee[], cc: Record<string,number>): Employee[] {
+  return [...emps].sort((a,b)=>{ const co=(cc[a.category]??999)-(cc[b.category]??999); return co!==0?co:a.sr-b.sr; });
 }
 
 function getStatusStyle(v:string) {
@@ -163,7 +167,14 @@ export function AttendanceTimesheet() {
   const [saving,setSaving]     = useState(false);
   const [saveErr,setSaveErr]   = useState('');
   const [dataLoaded,setDataLoaded] = useState(false);
+  const [showAddEmp,setShowAddEmp] = useState(false);
+  const [showImport,setShowImport] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const [catCodes,setCatCodes] = useState<Record<string,number>>(()=>{
+    try{const s=localStorage.getItem('catCodes');return s?{...DEFAULT_CAT_CODES,...JSON.parse(s)}:{...DEFAULT_CAT_CODES};}catch{return{...DEFAULT_CAT_CODES};}
+  });
+  useEffect(()=>{try{localStorage.setItem('catCodes',JSON.stringify(catCodes));}catch{}},[catCodes]);
+  const allCats=useMemo(()=>Object.keys(catCodes).sort((a,b)=>(catCodes[a]??999)-(catCodes[b]??999)),[catCodes]);
 
   // ── TS Header (persisted per month via localStorage) ────────────────
   const tsHdrKey = `tsHeader-${year}-${month}`;
@@ -191,12 +202,12 @@ export function AttendanceTimesheet() {
           nd.forEach((d,i)=>{ if(d.isSunday&&!s[i]) s[i]='SUNDAY'; });
           return {...e, status:s.slice(0,nd.length)};
         });
-        setEmployees(aligned);
+        setEmployees(sortByCategory(aligned,catCodes));
       } else {
-        setEmployees(seedEmployees(nd,fillUpTo));
+        setEmployees(sortByCategory(seedEmployees(nd,fillUpTo),catCodes));
       }
     } catch {
-      setEmployees(seedEmployees(nd,fillUpTo));
+      setEmployees(sortByCategory(seedEmployees(nd,fillUpTo),catCodes));
     } finally { setLoading(false); setDataLoaded(true); }
   }, []);
 
@@ -223,11 +234,16 @@ export function AttendanceTimesheet() {
 
   // ── Controls ──────────────────────────────────────────────────────
   const handleAdd = () => {
+    setShowAddEmp(true);
+  };
+  const doAddEmp = (name:string, pf:string, tno:string, cat:string, wo:string) => {
     const nd=buildDays(year,month); const fu=getAutoFillUpTo(year,month,nd.length);
-    setEmployees(p=>[...p, mkEmp(p.length+1,"NEW EMPLOYEE","","","JE","",nd,fu)]);
+    const newSr=Math.max(0,...employees.map(e=>e.sr))+1;
+    setEmployees(p=>sortByCategory([...p,mkEmp(newSr,name,pf,tno,cat,wo,nd,fu)],catCodes));
+    setShowAddEmp(false);
   };
   const updField = (id:string,f:keyof Employee,v:string) =>
-    setEmployees(p=>p.map(e=>e.id===id?{...e,[f]:v}:e));
+    setEmployees(p=>{const u=p.map(e=>e.id===id?{...e,[f]:v}:e);return f==='category'?sortByCategory(u,catCodes):u;});
   const updStatus = (id:string,di:number,v:string) =>
     setEmployees(p=>p.map(e=>{if(e.id!==id)return e;const s=[...e.status];s[di]=v;return{...e,status:s};}));
   const removeEmp = (id:string) =>
@@ -245,7 +261,7 @@ export function AttendanceTimesheet() {
   // ── Derived TS data ───────────────────────────────────────────────
   const tsEmployees = useMemo(()=>employees.filter(e=>e.tno!=='SSE'),[employees]);
   const workOrders  = useMemo(()=>Array.from(new Set(tsEmployees.map(e=>e.workOrder).filter(Boolean))),[tsEmployees]);
-  const tsCatOrder  = useMemo(()=>TS_CATS.filter(c=>tsEmployees.some(e=>e.category===c)),[tsEmployees]);
+  const tsCatOrder  = useMemo(()=>{const cats=Array.from(new Set(tsEmployees.map(e=>e.category)));return cats.sort((a,b)=>(catCodes[a]??999)-(catCodes[b]??999));},[tsEmployees,catCodes]);
 
   // ── PDF Export — Portrait A4, exact TS format ─────────────────────
   const downloadPDF = () => {
@@ -266,16 +282,16 @@ export function AttendanceTimesheet() {
     tsCatOrder.forEach(cat=>{
       const rows=tsEmployees.filter(e=>e.category===cat);
       if(!rows.length) return;
-      type WoSums={cr:number;leave:number;nh:number;duty:number;lncod:number};
+      type WoSums={cr:number;leave:number;nh:number;duty:number;lncod:number;hours:number;total:number};
       const wos:Record<string,WoSums>={};
-      workOrders.forEach(wo=>{wos[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0};});
+      workOrders.forEach(wo=>{wos[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0,hours:0,total:0};});
       let catTot=0;
 
       // Two-level header
       const wo0=workOrders[0]||'';
       const head=[
-        ['Category','Code','T.No',...workOrders.flatMap(wo=>[wo,'','','','']),'Total'],
-        ['','','',...workOrders.flatMap(()=>['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY']),''],
+        ['Category','Code','T.No',...workOrders.flatMap(wo=>[wo,'','','','','']),'Total'],
+        ['','','',...workOrders.flatMap(()=>['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY','Hours']),''],
       ];
 
       const body:(string|number)[][]=[];
@@ -283,19 +299,19 @@ export function AttendanceTimesheet() {
         const tv=getTsVals(e,days.length);
         catTot+=tv.total;
         const wo=e.workOrder;
-        if(wos[wo]){wos[wo].cr+=tv.cr;wos[wo].leave+=tv.leave;wos[wo].nh+=tv.nh;wos[wo].duty+=tv.duty;wos[wo].lncod+=tv.lncod;}
+        if(wos[wo]){wos[wo].cr+=tv.cr;wos[wo].leave+=tv.leave;wos[wo].nh+=tv.nh;wos[wo].duty+=tv.duty;wos[wo].lncod+=tv.lncod;wos[wo].hours+=tv.hours;wos[wo].total+=tv.total;}
         body.push([
-          ri===0?cat:'', ri===0?(CAT_CODE[cat]??''):'',
+          ri===0?cat:'', ri===0?(catCodes[cat]??''):'',
           e.tno.split('/')[0],
           ...workOrders.flatMap(wo2=>{
             const is=wo===wo2;
-            return [is?tv.cr:'',is?tv.leave:'',is?tv.nh:'',is?tv.duty:'',is?tv.lncod:''];
+            return [is?tv.cr:'',is?tv.leave:'',is?tv.nh:'',is?tv.duty:'',is?tv.lncod:'',is?tv.hours:''];
           }),
           tv.total,
         ]);
       });
       body.push(['Total Hours','',...Array(workOrders.length===0?1:1).fill(''),
-        ...workOrders.flatMap(wo2=>[wos[wo2].cr,wos[wo2].leave,wos[wo2].nh,wos[wo2].duty,wos[wo2].lncod]),
+        ...workOrders.flatMap(wo2=>[wos[wo2].cr,wos[wo2].leave,wos[wo2].nh,wos[wo2].duty,wos[wo2].lncod,wos[wo2].hours]),
         catTot]);
 
       autoTable(doc,{
@@ -312,31 +328,31 @@ export function AttendanceTimesheet() {
 
     // Grand summary
     y+=2;
-    type GS={cr:number;leave:number;nh:number;duty:number;lncod:number};
+    type GS={cr:number;leave:number;nh:number;duty:number;lncod:number;hours:number};
     const gs:Record<string,GS>={};
-    workOrders.forEach(wo=>{gs[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0};});
+    workOrders.forEach(wo=>{gs[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0,hours:0};});
     const catSummaryRows:(string|number)[][]=[];
     let grandTot=0;
     tsCatOrder.forEach(cat=>{
       const cr2=tsEmployees.filter(e=>e.category===cat);
-      const cs2:GS={cr:0,leave:0,nh:0,duty:0,lncod:0};
+      const cs2:GS={cr:0,leave:0,nh:0,duty:0,lncod:0,hours:0};
       let ct2=0;
       cr2.forEach(e=>{
         const tv=getTsVals(e,days.length);
         ct2+=tv.total; grandTot+=tv.total;
         const wo=e.workOrder;
-        if(gs[wo]){gs[wo].cr+=tv.cr;gs[wo].leave+=tv.leave;gs[wo].nh+=tv.nh;gs[wo].duty+=tv.duty;gs[wo].lncod+=tv.lncod;}
-        if(cs2){cs2.cr+=tv.cr;cs2.leave+=tv.leave;cs2.nh+=tv.nh;cs2.duty+=tv.duty;cs2.lncod+=tv.lncod;}
+        if(gs[wo]){gs[wo].cr+=tv.cr;gs[wo].leave+=tv.leave;gs[wo].nh+=tv.nh;gs[wo].duty+=tv.duty;gs[wo].lncod+=tv.lncod;gs[wo].hours+=tv.hours;}
+        if(cs2){cs2.cr+=tv.cr;cs2.leave+=tv.leave;cs2.nh+=tv.nh;cs2.duty+=tv.duty;cs2.lncod+=tv.lncod;cs2.hours+=tv.hours;}
       });
-      catSummaryRows.push([cat,CAT_CODE[cat]??'',
-        ...workOrders.flatMap(wo2=>[cs2.cr,cs2.leave,cs2.nh,cs2.duty,cs2.lncod]),ct2]);
+      catSummaryRows.push([cat,catCodes[cat]??'',
+        ...workOrders.flatMap(wo2=>[cs2.cr,cs2.leave,cs2.nh,cs2.duty,cs2.lncod,cs2.hours]),ct2]);
     });
     catSummaryRows.push(['Total Hours','',
-      ...workOrders.flatMap(wo2=>[gs[wo2].cr,gs[wo2].leave,gs[wo2].nh,gs[wo2].duty,gs[wo2].lncod]),grandTot]);
+      ...workOrders.flatMap(wo2=>[gs[wo2].cr,gs[wo2].leave,gs[wo2].nh,gs[wo2].duty,gs[wo2].lncod,gs[wo2].hours]),grandTot]);
 
     const sumHead=[
-      ['Category','Code',...workOrders.flatMap(wo=>[wo,'','','','']),'Total'],
-      ['','',...workOrders.flatMap(()=>['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY']),''],
+      ['Category','Code',...workOrders.flatMap(wo=>[wo,'','','','','']),'Total'],
+      ['','',...workOrders.flatMap(()=>['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY','Hours']),''],
     ];
     autoTable(doc,{
       head:sumHead,body:catSummaryRows,startY:y,
@@ -482,8 +498,8 @@ export function AttendanceTimesheet() {
       properties:{tabColor:{argb:'FF1F7A6C'}},
     });
     const tsWOs: string[] = Array.from(new Set(tsEmployees.map(e=>e.workOrder).filter(Boolean))) as string[];
-    const tsCatOrd = TS_CATS.filter(c=>tsEmployees.some(e=>e.category===c));
-    const perWOCols = 5; // CR LEAVE NH DUTY LNCOD
+    const tsCatOrd = (Array.from(new Set(tsEmployees.map(e=>e.category))) as string[]).sort((a,b)=>(catCodes[a]??999)-(catCodes[b]??999));
+    const perWOCols = 6; // CR LEAVE NH DUTY LNCOD HOURS
     const tsTotalC = 3 + tsWOs.length*perWOCols + 1; // Cat+Code+TNo + WOs + Total
 
     // Column widths for TS sheet
@@ -542,10 +558,10 @@ export function AttendanceTimesheet() {
       r2.eachCell((c,col)=>{if(col<=tsTotalC)c.style={font:hdrFont(9),fill:navyFill(),alignment:ctrAlign,border:thinBorder()};});
       tsRow++;
 
-      // Row: CR LEAVE NH ON DUTY L+NH+CR+ON DUTY
+      // Row: CR LEAVE NH ON DUTY L+NH+CR+ON DUTY HOURS
       ws2.getCell(tsRow,1).value=''; ws2.getCell(tsRow,2).value=''; ws2.getCell(tsRow,3).value='';
       tsWOs.forEach((_,wi)=>{
-        ['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY'].forEach((h,hi)=>{
+        ['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY','Hours'].forEach((h,hi)=>{
           const c=ws2.getCell(tsRow,4+wi*perWOCols+hi);
           c.value=h;
         });
@@ -557,8 +573,8 @@ export function AttendanceTimesheet() {
     };
 
     // Per-category tables
-    const grandSums: Record<string,{cr:number;leave:number;nh:number;duty:number;lncod:number}> = {};
-    tsWOs.forEach(wo=>{grandSums[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0};});
+    const grandSums: Record<string,{cr:number;leave:number;nh:number;duty:number;lncod:number;hours:number}> = {};
+    tsWOs.forEach(wo=>{grandSums[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0,hours:0};});
     let grandTotal=0;
     const catSummary: {cat:string; cs:Record<string,number[]>; ct:number}[] = [];
 
@@ -568,7 +584,7 @@ export function AttendanceTimesheet() {
       addCatHeader(cat);
 
       const woCatSums: Record<string,number[]>={};
-      tsWOs.forEach(wo=>{woCatSums[wo]=[0,0,0,0,0];});
+      tsWOs.forEach(wo=>{woCatSums[wo]=[0,0,0,0,0,0];});
       let catTot=0;
       const dataStartRow=tsRow;
 
@@ -576,14 +592,14 @@ export function AttendanceTimesheet() {
         const tv=getTsVals(e,days.length);
         catTot+=tv.total; grandTotal+=tv.total;
         const wo=e.workOrder;
-        if(woCatSums[wo]){woCatSums[wo][0]+=tv.cr;woCatSums[wo][1]+=tv.leave;woCatSums[wo][2]+=tv.nh;woCatSums[wo][3]+=tv.duty;woCatSums[wo][4]+=tv.lncod;}
-        if(grandSums[wo]){grandSums[wo].cr+=tv.cr;grandSums[wo].leave+=tv.leave;grandSums[wo].nh+=tv.nh;grandSums[wo].duty+=tv.duty;grandSums[wo].lncod+=tv.lncod;}
+        if(woCatSums[wo]){woCatSums[wo][0]+=tv.cr;woCatSums[wo][1]+=tv.leave;woCatSums[wo][2]+=tv.nh;woCatSums[wo][3]+=tv.duty;woCatSums[wo][4]+=tv.lncod;woCatSums[wo][5]+=tv.hours;}
+        if(grandSums[wo]){grandSums[wo].cr+=tv.cr;grandSums[wo].leave+=tv.leave;grandSums[wo].nh+=tv.nh;grandSums[wo].duty+=tv.duty;grandSums[wo].lncod+=tv.lncod;grandSums[wo].hours+=tv.hours;}
 
         const rowBg = ri%2===0 ? solidFill(WHITE) : solidFill(CREAM);
         ws2.getCell(tsRow,3).value=e.tno.split('/')[0];
         tsWOs.forEach((wo2,wi)=>{
           const isThis=wo===wo2;
-          const vals=isThis?[tv.cr,tv.leave,tv.nh,tv.duty,tv.lncod]:['','','','',''];
+          const vals=isThis?[tv.cr,tv.leave,tv.nh,tv.duty,tv.lncod,tv.hours]:['','','','','',''];
           vals.forEach((v,vi)=>{ ws2.getCell(tsRow,4+wi*perWOCols+vi).value=v; });
         });
         ws2.getCell(tsRow,3+tsWOs.length*perWOCols+1).value=tv.total;
@@ -600,14 +616,14 @@ export function AttendanceTimesheet() {
       }
       ws2.getCell(dataStartRow,1).value=cat;
       ws2.getCell(dataStartRow,1).style={font:bodyFont(9,true),fill:solidFill(CREAM),alignment:ctrAlign,border:thinBorder()};
-      ws2.getCell(dataStartRow,2).value=CAT_CODE[cat]??'';
+      ws2.getCell(dataStartRow,2).value=catCodes[cat]??'';
       ws2.getCell(dataStartRow,2).style={font:bodyFont(9),fill:solidFill(CREAM),alignment:ctrAlign,border:thinBorder()};
 
       // Total row
       ws2.getCell(tsRow,1).value='Total Hours';
       ws2.mergeCells(tsRow,1,tsRow,3);
       tsWOs.forEach((wo2,wi)=>{
-        [woCatSums[wo2][0],woCatSums[wo2][1],woCatSums[wo2][2],woCatSums[wo2][3],woCatSums[wo2][4]].forEach((v,vi)=>{ ws2.getCell(tsRow,4+wi*perWOCols+vi).value=v; });
+        [woCatSums[wo2][0],woCatSums[wo2][1],woCatSums[wo2][2],woCatSums[wo2][3],woCatSums[wo2][4],woCatSums[wo2][5]].forEach((v,vi)=>{ ws2.getCell(tsRow,4+wi*perWOCols+vi).value=v; });
       });
       ws2.getCell(tsRow,3+tsWOs.length*perWOCols+1).value=catTot;
       const totRow=ws2.getRow(tsRow); totRow.height=15;
@@ -621,9 +637,9 @@ export function AttendanceTimesheet() {
     addCatHeader('GRAND SUMMARY');
     catSummary.forEach(({cat,cs,ct},ri)=>{
       ws2.getCell(tsRow,1).value=cat;
-      ws2.getCell(tsRow,2).value=CAT_CODE[cat]??'';
+      ws2.getCell(tsRow,2).value=catCodes[cat]??'';
       tsWOs.forEach((wo,wi)=>{
-        (cs[wo]||[0,0,0,0,0]).forEach((v:number,vi:number)=>{ ws2.getCell(tsRow,4+wi*perWOCols+vi).value=v; });
+        (cs[wo]||[0,0,0,0,0,0]).forEach((v:number,vi:number)=>{ ws2.getCell(tsRow,4+wi*perWOCols+vi).value=v; });
       });
       ws2.getCell(tsRow,3+tsWOs.length*perWOCols+1).value=ct;
       const r=ws2.getRow(tsRow); r.height=15;
@@ -633,7 +649,7 @@ export function AttendanceTimesheet() {
     // Grand total
     ws2.getCell(tsRow,1).value='Total Hours'; ws2.mergeCells(tsRow,1,tsRow,3);
     tsWOs.forEach((wo,wi)=>{
-      [grandSums[wo].cr,grandSums[wo].leave,grandSums[wo].nh,grandSums[wo].duty,grandSums[wo].lncod].forEach((v,vi)=>{ ws2.getCell(tsRow,4+wi*perWOCols+vi).value=v; });
+      [grandSums[wo].cr,grandSums[wo].leave,grandSums[wo].nh,grandSums[wo].duty,grandSums[wo].lncod,grandSums[wo].hours].forEach((v,vi)=>{ ws2.getCell(tsRow,4+wi*perWOCols+vi).value=v; });
     });
     ws2.getCell(tsRow,3+tsWOs.length*perWOCols+1).value=grandTotal;
     const gtRow=ws2.getRow(tsRow); gtRow.height=16;
@@ -695,11 +711,12 @@ export function AttendanceTimesheet() {
           <input type="number" className="w-20 border border-[#D8D3C4] bg-white px-2 py-1.5 text-[13px] rounded-sm" value={year} onChange={e=>setYear(Number(e.target.value))} />
           <button onClick={()=>loadMonth(year,month)} className="border border-[#12213D] px-2.5 py-1 text-[12px] font-semibold rounded-sm hover:opacity-80">Load</button>
           <button onClick={()=>loadMonth(year,month,true)} title="Clear saved data and reload default seed" className="border border-[#B23A2E] text-[#B23A2E] px-2.5 py-1 text-[12px] font-semibold rounded-sm hover:opacity-80">Reset Seed</button>
-          <span className={`text-[11px] ml-1 ${saving?'text-[#E0A526]':saveErr?'text-[#B23A2E]':'text-[#2E7D4F]'}`}>
+          <span className={`no-print text-[11px] ml-1 ${saving?'text-[#E0A526]':saveErr?'text-[#B23A2E]':'text-[#2E7D4F]'}`}>
             {saving?'⏳ Saving…':saveErr?'⚠ '+saveErr:dataLoaded?'✓ Saved':''}
           </span>
           <span className="flex-1" />
           <button onClick={handleAdd} className="border border-[#12213D] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">+ Add Employee</button>
+          <button onClick={()=>setShowImport(true)} className="border border-[#12213D] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">Import JSON</button>
           <button onClick={()=>setActiveTab('preview')} className="bg-[#E0A526] text-[#12213D] border border-[#E0A526] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">Generate Time Sheet</button>
           <button onClick={()=>window.print()} className="border border-[#12213D] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">🖨 Print</button>
           <button onClick={downloadPDF} className="bg-[#12213D] text-white px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">↓ PDF</button>
@@ -729,9 +746,12 @@ export function AttendanceTimesheet() {
             <table className="border-collapse w-full text-[12px]">
               <thead>
                 <tr>
-                  {["Sr.","Name","PF No.","T.No/Desig.","Category","Work Order"].map(h=>(
-                    <th key={h} className={TH_DARK} style={{position:'sticky',top:0,zIndex:10}}>{h}</th>
-                  ))}
+                  <th className={TH_DARK} style={{position:'sticky',top:0,left:0,zIndex:20}}>Sr.</th>
+                  <th className={TH_DARK} style={{position:'sticky',top:0,left:'28px',zIndex:20}}>Name</th>
+                  <th className={TH_DARK} style={{position:'sticky',top:0,left:'168px',zIndex:20}}>PF No.</th>
+                  <th className={TH_DARK} style={{position:'sticky',top:0,left:'288px',zIndex:20}}>T.No/Desig.</th>
+                  <th className={TH_DARK} style={{position:'sticky',top:0,zIndex:10}}>Category</th>
+                  <th className={TH_DARK} style={{position:'sticky',top:0,zIndex:10}}>Work Order</th>
                   {days.map(d=>(
                     <th key={d.num} className={cn(TH_DARK, d.isSunday && "bg-[#5B5648]")} style={{position:'sticky',top:0,zIndex:10}}>{d.num}</th>
                   ))}
@@ -745,8 +765,17 @@ export function AttendanceTimesheet() {
                   const t=computeTotals(e,days.length);
                   return (
                     <tr key={e.id}>
-                      <td className="font-['IBM_Plex_Mono',monospace] border border-[#D8D3C4] p-1 text-center text-[11px] text-[#3C4A66]">{e.sr}</td>
-                      {([['name','min-w-[140px] text-left'],['pf','min-w-[120px]'],['tno','min-w-[90px]'],['category','min-w-[70px]'],['workOrder','min-w-[75px]']] as [keyof Employee,string][]).map(([f,cls])=>(
+                      <td className="font-['IBM_Plex_Mono',monospace] border border-[#D8D3C4] p-1 text-center text-[11px] text-[#3C4A66] bg-white sticky left-0 z-10">{e.sr}</td>
+                      <td className="border border-[#D8D3C4] p-0.5 min-w-[140px] text-left bg-white sticky left-[28px] z-10">
+                        <input type="text" className="w-full border-none bg-transparent text-[12px] text-[#12213D] px-0.5 focus:outline focus:outline-1 focus:outline-[#12213D] focus:bg-white" value={e.name} onChange={ev=>updField(e.id,'name',ev.target.value)} />
+                      </td>
+                      <td className="border border-[#D8D3C4] p-0.5 min-w-[120px] bg-white sticky left-[168px] z-10">
+                        <input type="text" className="w-full border-none bg-transparent text-[12px] text-[#12213D] px-0.5 focus:outline focus:outline-1 focus:outline-[#12213D] focus:bg-white" value={e.pf} onChange={ev=>updField(e.id,'pf',ev.target.value)} />
+                      </td>
+                      <td className="border border-[#D8D3C4] p-0.5 min-w-[90px] bg-white sticky left-[288px] z-10">
+                        <input type="text" className="w-full border-none bg-transparent text-[12px] text-[#12213D] px-0.5 focus:outline focus:outline-1 focus:outline-[#12213D] focus:bg-white" value={e.tno} onChange={ev=>updField(e.id,'tno',ev.target.value)} />
+                      </td>
+                      {([['category','min-w-[70px]'],['workOrder','min-w-[75px]']] as [keyof Employee,string][]).map(([f,cls])=>(
                         <td key={f} className={cn("border border-[#D8D3C4] p-0.5",cls)}>
                           <input type="text" className="w-full border-none bg-transparent text-[12px] text-[#12213D] px-0.5 focus:outline focus:outline-1 focus:outline-[#12213D] focus:bg-white" value={String(e[f]??'')} onChange={ev=>updField(e.id,f,ev.target.value)} />
                         </td>
@@ -845,9 +874,9 @@ export function AttendanceTimesheet() {
             {tsCatOrder.map(cat=>{
               const rows=tsEmployees.filter(e=>e.category===cat);
               if(!rows.length) return null;
-              type WS={cr:number;leave:number;nh:number;duty:number;lncod:number};
+              type WS={cr:number;leave:number;nh:number;duty:number;lncod:number;hours:number};
               const woCatSums:Record<string,WS>={};
-              workOrders.forEach(wo=>{woCatSums[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0};});
+              workOrders.forEach(wo=>{woCatSums[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0,hours:0};});
               let catTot=0;
 
               return (
@@ -857,17 +886,17 @@ export function AttendanceTimesheet() {
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center" rowSpan={2}>Category</td>
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center" rowSpan={2}>Code</td>
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center" rowSpan={2}>T.No.</td>
-                      <td className="border border-[#D8D3C4] p-1 font-bold text-center" colSpan={workOrders.length*5}>WORK ORDER NUMBER</td>
+                      <td className="border border-[#D8D3C4] p-1 font-bold text-center" colSpan={workOrders.length*6}>WORK ORDER NUMBER</td>
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center" rowSpan={2}>Total</td>
                     </tr>
                     <tr className="bg-[#F5F3EC]">
-                      {workOrders.map(wo=><td key={wo} colSpan={5} className="border border-[#D8D3C4] p-1 font-bold text-center">{wo}</td>)}
+                      {workOrders.map(wo=><td key={wo} colSpan={6} className="border border-[#D8D3C4] p-1 font-bold text-center">{wo}</td>)}
                     </tr>
                     <tr className="bg-[#EFECDF] text-[10.5px]">
                       <td className="border border-[#D8D3C4] p-0.5"/><td className="border border-[#D8D3C4] p-0.5"/><td className="border border-[#D8D3C4] p-0.5"/>
                       {workOrders.map(wo=>(
                         <React.Fragment key={wo}>
-                          {['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY'].map(h=>(
+                          {['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY','Hours'].map(h=>(
                             <td key={h} className="border border-[#D8D3C4] p-0.5 text-center font-bold">{h}</td>
                           ))}
                         </React.Fragment>
@@ -881,11 +910,11 @@ export function AttendanceTimesheet() {
                       const tc=computeTotals(e,days.length); // computed (for mismatch check)
                       catTot+=tv.total;
                       const wo=e.workOrder;
-                      if(woCatSums[wo]){woCatSums[wo].cr+=tv.cr;woCatSums[wo].leave+=tv.leave;woCatSums[wo].nh+=tv.nh;woCatSums[wo].duty+=tv.duty;woCatSums[wo].lncod+=tv.lncod;}
+                      if(woCatSums[wo]){woCatSums[wo].cr+=tv.cr;woCatSums[wo].leave+=tv.leave;woCatSums[wo].nh+=tv.nh;woCatSums[wo].duty+=tv.duty;woCatSums[wo].lncod+=tv.lncod;woCatSums[wo].hours+=tv.hours;}
                       return (
                         <tr key={e.id} className={ri%2===0?'bg-white':'bg-[#FAFAF7]'}>
                           {ri===0&&<td className="border border-[#D8D3C4] p-1 text-center font-semibold" rowSpan={rows.length}>{cat}</td>}
-                          {ri===0&&<td className="border border-[#D8D3C4] p-1 text-center" rowSpan={rows.length}>{CAT_CODE[cat]??''}</td>}
+                          {ri===0&&<td className="border border-[#D8D3C4] p-1 text-center" rowSpan={rows.length}>{catCodes[cat]??''}</td>}
                           <td className={TD_NE}>{e.tno.split('/')[0]}</td>
                           {workOrders.map(wo2=>{
                             const isThis=wo===wo2;
@@ -896,6 +925,7 @@ export function AttendanceTimesheet() {
                                 <td className={TD_TS}>{isThis?<TsCell val={tv.nh} computed={tc.nhHrs} onChange={v=>setTsOv(e.id,'nh',v)} onReset={()=>setTsOv(e.id,'nh',tc.nhHrs)}/>:''}</td>
                                 <td className={TD_TS}>{isThis?<TsCell val={tv.duty} computed={tc.dutyHrs} onChange={v=>setTsOv(e.id,'duty',v)} onReset={()=>setTsOv(e.id,'duty',tc.dutyHrs)}/>:''}</td>
                                 <td className={TD_NE}>{isThis?tv.lncod:''}</td>
+                                <td className={TD_NE}>{isThis?tv.hours:''}</td>
                               </React.Fragment>
                             );
                           })}
@@ -908,7 +938,7 @@ export function AttendanceTimesheet() {
                       <td colSpan={3} className="border border-[#D8D3C4] p-1 text-center text-[11.5px]">Total Hours</td>
                       {workOrders.map(wo=>(
                         <React.Fragment key={wo}>
-                          {(['cr','leave','nh','duty','lncod'] as const).map(k=>(
+                          {(['cr','leave','nh','duty','lncod','hours'] as const).map(k=>(
                             <td key={k} className={TD_NE}>{woCatSums[wo]?.[k]??0}</td>
                           ))}
                         </React.Fragment>
@@ -922,15 +952,15 @@ export function AttendanceTimesheet() {
 
             {/* Grand Summary table */}
             {(()=>{
-              type GS2={cr:number;leave:number;nh:number;duty:number;lncod:number};
+              type GS2={cr:number;leave:number;nh:number;duty:number;lncod:number;hours:number};
               const gs2:Record<string,GS2>={};
-              workOrders.forEach(wo=>{gs2[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0};});
+              workOrders.forEach(wo=>{gs2[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0,hours:0};});
               let grandTot2=0;
               const sumRows=tsCatOrder.map(cat=>{
                 const cr=tsEmployees.filter(e=>e.category===cat);
-                const cs:GS2={cr:0,leave:0,nh:0,duty:0,lncod:0};
+                const cs:GS2={cr:0,leave:0,nh:0,duty:0,lncod:0,hours:0};
                 let ct=0;
-                cr.forEach(e=>{const tv=getTsVals(e,days.length);ct+=tv.total;grandTot2+=tv.total;const wo=e.workOrder;if(gs2[wo]){gs2[wo].cr+=tv.cr;gs2[wo].leave+=tv.leave;gs2[wo].nh+=tv.nh;gs2[wo].duty+=tv.duty;gs2[wo].lncod+=tv.lncod;}cs.cr+=tv.cr;cs.leave+=tv.leave;cs.nh+=tv.nh;cs.duty+=tv.duty;cs.lncod+=tv.lncod;});
+                cr.forEach(e=>{const tv=getTsVals(e,days.length);ct+=tv.total;grandTot2+=tv.total;const wo=e.workOrder;if(gs2[wo]){gs2[wo].cr+=tv.cr;gs2[wo].leave+=tv.leave;gs2[wo].nh+=tv.nh;gs2[wo].duty+=tv.duty;gs2[wo].lncod+=tv.lncod;gs2[wo].hours+=tv.hours;}cs.cr+=tv.cr;cs.leave+=tv.leave;cs.nh+=tv.nh;cs.duty+=tv.duty;cs.lncod+=tv.lncod;cs.hours+=tv.hours;});
                 return {cat,cs,ct};
               });
               return (
@@ -939,19 +969,19 @@ export function AttendanceTimesheet() {
                     <tr className="bg-[#F5F3EC]">
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center">Category</td>
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center">Code</td>
-                      <td className="border border-[#D8D3C4] p-1 font-bold text-center" colSpan={workOrders.length*5}>WORK ORDER NUMBER</td>
+                      <td className="border border-[#D8D3C4] p-1 font-bold text-center" colSpan={workOrders.length*6}>WORK ORDER NUMBER</td>
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center">Total</td>
                     </tr>
                     <tr className="bg-[#F5F3EC]">
                       <td className="border border-[#D8D3C4] p-1"/><td className="border border-[#D8D3C4] p-1"/>
-                      {workOrders.map(wo=><td key={wo} colSpan={5} className="border border-[#D8D3C4] p-1 font-bold text-center">{wo}</td>)}
+                      {workOrders.map(wo=><td key={wo} colSpan={6} className="border border-[#D8D3C4] p-1 font-bold text-center">{wo}</td>)}
                       <td className="border border-[#D8D3C4] p-1"/>
                     </tr>
                     <tr className="bg-[#EFECDF] text-[10.5px]">
                       <td className="border border-[#D8D3C4] p-0.5"/><td className="border border-[#D8D3C4] p-0.5"/>
                       {workOrders.map(wo=>(
                         <React.Fragment key={wo}>
-                          {['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY'].map(h=>(
+                          {['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY','Hours'].map(h=>(
                             <td key={h} className="border border-[#D8D3C4] p-0.5 text-center font-bold">{h}</td>
                           ))}
                         </React.Fragment>
@@ -963,10 +993,10 @@ export function AttendanceTimesheet() {
                     {sumRows.map(({cat,cs,ct})=>(
                       <tr key={cat} className="italic text-[11px]">
                         <td className="border border-[#D8D3C4] p-1 text-center font-semibold not-italic">{cat}</td>
-                        <td className={TD_NE}>{CAT_CODE[cat]??''}</td>
+                        <td className={TD_NE}>{catCodes[cat]??''}</td>
                         {workOrders.map(wo=>(
                           <React.Fragment key={wo}>
-                            {(['cr','leave','nh','duty','lncod'] as const).map(k=>(
+                            {(['cr','leave','nh','duty','lncod','hours'] as const).map(k=>(
                               <td key={k} className={TD_NE}>{cs[k]??0}</td>
                             ))}
                           </React.Fragment>
@@ -978,7 +1008,7 @@ export function AttendanceTimesheet() {
                       <td colSpan={2} className="border border-[#D8D3C4] p-1 text-center text-[11.5px]">Total Hours</td>
                       {workOrders.map(wo=>(
                         <React.Fragment key={wo}>
-                          {(['cr','leave','nh','duty','lncod'] as const).map(k=>(
+                          {(['cr','leave','nh','duty','lncod','hours'] as const).map(k=>(
                             <td key={k} className={TD_NE}>{gs2[wo]?.[k]??0}</td>
                           ))}
                         </React.Fragment>
@@ -1006,6 +1036,55 @@ export function AttendanceTimesheet() {
           </div>
         )}
       </div>
+
+      {/* ── Add Employee Modal ── */}
+      {showAddEmp && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded shadow-xl w-[350px] max-w-[90vw] shrink-0">
+            <h2 className="font-bold text-lg mb-4 text-[#12213D]">Add New Employee</h2>
+            <form onSubmit={e=>{
+              e.preventDefault(); const fd=new FormData(e.currentTarget);
+              doAddEmp(fd.get('name') as string, fd.get('pf') as string, fd.get('tno') as string, fd.get('category') as string, fd.get('wo') as string);
+            }} className="flex flex-col gap-3">
+              <input required name="name" placeholder="Name" className="border border-gray-300 p-2.5 rounded text-[13px] text-black bg-white placeholder-gray-500 focus:outline-[#12213D] w-full" />
+              <input name="pf" placeholder="PF No." className="border border-gray-300 p-2.5 rounded text-[13px] text-black bg-white placeholder-gray-500 focus:outline-[#12213D] w-full" />
+              <input name="tno" placeholder="T.No / Desig." className="border border-gray-300 p-2.5 rounded text-[13px] text-black bg-white placeholder-gray-500 focus:outline-[#12213D] w-full" />
+              <input name="wo" placeholder="Work Order" className="border border-gray-300 p-2.5 rounded text-[13px] text-black bg-white placeholder-gray-500 focus:outline-[#12213D] w-full" />
+              <select name="category" className="border border-gray-300 p-2.5 rounded text-[13px] text-black bg-white focus:outline-[#12213D] w-full" required>
+                <option value="">Select Category...</option>
+                {allCats.map(c=><option key={c} value={c}>{c} (Code {catCodes[c]})</option>)}
+              </select>
+              <div className="flex justify-end gap-2 mt-3">
+                <button type="button" onClick={()=>setShowAddEmp(false)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-100 text-[13px] text-black font-medium">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-[#12213D] text-white rounded hover:bg-opacity-90 text-[13px] font-medium">Add</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── JSON Import Modal ── */}
+      {showImport && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded shadow-xl w-[350px] max-w-[90vw] shrink-0">
+            <h2 className="font-bold text-lg mb-4 text-[#12213D]">Import Month Data (JSON)</h2>
+            <input type="file" accept=".json" onChange={async (e)=>{
+              const file=e.target.files?.[0]; if(!file)return;
+              try {
+                const text=await file.text(); const parsed=JSON.parse(text);
+                if(Array.isArray(parsed)){
+                  setEmployees(sortByCategory(parsed,catCodes));
+                  alert('Import successful. Will auto-save shortly.');
+                }
+              } catch { alert('Invalid JSON format'); }
+              setShowImport(false);
+            }} className="border p-2 w-full text-[13px]" />
+            <div className="flex justify-end mt-4">
+              <button type="button" onClick={()=>setShowImport(false)} className="px-3 py-1.5 border rounded hover:bg-gray-50 text-[13px]">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
