@@ -111,6 +111,7 @@ function getStatusStyle(v:string) {
   if(v==='A') return 'bg-[#FBE7E4] text-[#B23A2E] border-[#B23A2E]';
   if(['LAP','LHAP','CL','LEAVE','1/2 LEAVE'].includes(v)) return 'bg-[#F1E9F4] text-[#6E4A7E] border-[#6E4A7E]';
   if(['CR','DUTY'].includes(v)) return 'bg-[#E3F0EE] text-[#1F7A6C] border-[#1F7A6C]';
+  if(v==='NH') return 'bg-[#FFF3E0] text-[#E0A526] border-[#E0A526]';
   if(v==='SUNDAY') return 'bg-[#ECEAE4] text-[#8A8377] border-[#8A8377]';
   return 'bg-white text-[#12213D] border-[#D8D3C4]';
 }
@@ -185,6 +186,9 @@ export function AttendanceTimesheet() {
   const [dataLoaded,setDataLoaded] = useState(false);
   const [showAddEmp,setShowAddEmp] = useState(false);
   const [showImport,setShowImport] = useState(false);
+  const [importData,setImportData] = useState<any>(null);
+  const [importPreview,setImportPreview] = useState<{key:string, count:number}[]>([]);
+  const [selectedImportKey,setSelectedImportKey] = useState<string>('');
   const saveTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
   const [catCodes,setCatCodes] = useState<Record<string,number>>(()=>{
     try{const s=localStorage.getItem('catCodes');return s?{...DEFAULT_CAT_CODES,...JSON.parse(s)}:{...DEFAULT_CAT_CODES};}catch{return{...DEFAULT_CAT_CODES};}
@@ -302,6 +306,13 @@ export function AttendanceTimesheet() {
   // TS override setter — stored on employee, auto-saves to DB
   const setTsOv = (id:string, field:keyof TsOverride, v:number) =>
     setEmployees(p=>p.map(e=>e.id!==id?e:{...e, tsOverride:{...e.tsOverride,[field]:v}}));
+
+  const exportMonthJSON = () => {
+    const dataStr = JSON.stringify(employees, null, 2);
+    const blob = new Blob([dataStr], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `Attendance-${MONTHS[month]}-${year}.json`; a.click(); URL.revokeObjectURL(url);
+  };
 
   const dailyPres = useMemo(
     ()=>days.map((_,di)=>employees.filter(e=>e.status[di]==='P').length),
@@ -754,19 +765,19 @@ export function AttendanceTimesheet() {
         {/* Controls */}
         <div className="flex flex-wrap items-center gap-2 bg-white border border-[#D8D3C4] px-3 py-2.5 my-3 rounded-sm">
           <label className="text-[12px] text-[#3C4A66] font-semibold">Month</label>
-          <select className="border border-[#D8D3C4] bg-white px-2 py-1.5 text-[13px] text-[#12213D] rounded-sm" value={month} onChange={e=>setMonth(Number(e.target.value))}>
+          <select className="border border-[#D8D3C4] bg-white px-2 py-1.5 text-[13px] text-[#12213D] rounded-sm" value={month} onChange={e=>{const m=Number(e.target.value); setMonth(m); loadMonth(year,m);}}>
             {MONTHS.map((m,i)=><option key={m} value={i}>{m}</option>)}
           </select>
           <label className="text-[12px] text-[#3C4A66] font-semibold ml-2">Year</label>
-          <input type="number" className="w-20 border border-[#D8D3C4] bg-white px-2 py-1.5 text-[13px] rounded-sm" value={year} onChange={e=>setYear(Number(e.target.value))} />
-          <button onClick={()=>loadMonth(year,month)} className="border border-[#12213D] px-2.5 py-1 text-[12px] font-semibold rounded-sm hover:opacity-80">Load</button>
-          <button onClick={()=>loadMonth(year,month,true)} title="Clear saved data and reload default seed" className="border border-[#B23A2E] text-[#B23A2E] px-2.5 py-1 text-[12px] font-semibold rounded-sm hover:opacity-80">Reset Seed</button>
+          <input type="number" className="w-20 border border-[#D8D3C4] bg-white px-2 py-1.5 text-[13px] rounded-sm" value={year} onChange={e=>{const y=Number(e.target.value); setYear(y); loadMonth(y,month);}} />
+          <button onClick={()=>{ if(window.confirm('Are you sure you want to clear saved data and reset to default? This cannot be undone.')) loadMonth(year,month,true); }} title="Clear saved data and reload default seed" className="border border-[#B23A2E] text-[#B23A2E] px-2.5 py-1 text-[12px] font-semibold rounded-sm hover:opacity-80">Reset Seed</button>
           <span className={`no-print text-[11px] ml-1 ${saving?'text-[#E0A526]':saveErr?'text-[#B23A2E]':'text-[#2E7D4F]'}`}>
             {saving?'⏳ Saving…':saveErr?'⚠ '+saveErr:dataLoaded?'✓ Saved':''}
           </span>
           <span className="flex-1" />
           <button onClick={handleAdd} className="border border-[#12213D] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">+ Add Employee</button>
-          <button onClick={()=>setShowImport(true)} className="border border-[#12213D] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">Import JSON</button>
+          <button onClick={()=>setShowImport(true)} className="border border-[#12213D] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">↓ Import</button>
+          <button onClick={exportMonthJSON} className="border border-[#12213D] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">↑ Export</button>
           <button onClick={()=>setActiveTab('preview')} className="bg-[#E0A526] text-[#12213D] border border-[#E0A526] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">Generate Time Sheet</button>
           <button onClick={()=>window.print()} className="border border-[#12213D] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">🖨 Print</button>
           <button onClick={downloadPDF} className="bg-[#12213D] text-white px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">↓ PDF</button>
@@ -1116,21 +1127,60 @@ export function AttendanceTimesheet() {
       {/* ── JSON Import Modal ── */}
       {showImport && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white p-6 rounded shadow-xl w-[350px] max-w-[90vw] shrink-0">
+          <div className="bg-white p-6 rounded shadow-xl w-[450px] max-w-[90vw] shrink-0">
             <h2 className="font-bold text-lg mb-4 text-[#12213D]">Import Month Data (JSON)</h2>
             <input type="file" accept=".json" onChange={async (e)=>{
               const file=e.target.files?.[0]; if(!file)return;
               try {
                 const text=await file.text(); const parsed=JSON.parse(text);
-                if(Array.isArray(parsed)){
-                  setEmployees(sortByCategory(parsed,catCodes));
-                  alert('Import successful. Will auto-save shortly.');
+                setImportData(parsed);
+                if (Array.isArray(parsed)) {
+                  setImportPreview([{key: 'Array Data (Current Month)', count: parsed.length}]);
+                  setSelectedImportKey('Array Data (Current Month)');
+                } else {
+                  const keys = Object.keys(parsed);
+                  setImportPreview(keys.map(k => ({key: k, count: Array.isArray(parsed[k]) ? parsed[k].length : 0})));
+                  setSelectedImportKey(keys[0] || '');
                 }
               } catch { alert('Invalid JSON format'); }
-              setShowImport(false);
-            }} className="border p-2 w-full text-[13px]" />
-            <div className="flex justify-end mt-4">
-              <button type="button" onClick={()=>setShowImport(false)} className="px-3 py-1.5 border rounded hover:bg-gray-50 text-[13px]">Cancel</button>
+            }} className="border p-2 w-full text-[13px] mb-4" />
+            
+            {importPreview.length > 0 && (
+              <div className="mb-4">
+                <label className="text-[12px] text-[#3C4A66] font-semibold mb-1 block">Select Month to Import:</label>
+                <select className="border border-gray-300 p-2 rounded text-[13px] w-full" value={selectedImportKey} onChange={e=>setSelectedImportKey(e.target.value)}>
+                  {importPreview.map(p => (
+                    <option key={p.key} value={p.key}>{p.key} ({p.count} records)</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="flex justify-end mt-4 gap-2">
+              <button type="button" onClick={()=>{setShowImport(false); setImportData(null); setImportPreview([]);}} className="px-3 py-1.5 border rounded hover:bg-gray-50 text-[13px]">Cancel</button>
+              <button type="button" disabled={!importData || !selectedImportKey} onClick={()=>{
+                let toImport = [];
+                if (selectedImportKey === 'Array Data (Current Month)') {
+                  toImport = importData;
+                } else {
+                  toImport = importData[selectedImportKey] || [];
+                }
+                
+                if (Array.isArray(toImport)) {
+                  const nd = buildDays(year, month);
+                  const aligned = toImport.map((e: any) => {
+                    const s = [...(e.status || [])];
+                    while (s.length < nd.length) s.push('');
+                    nd.forEach((d, i) => { if (d.isSunday) s[i] = 'SUNDAY'; else if(s[i]==='SUNDAY') s[i]=''; });
+                    return { ...e, status: s.slice(0, nd.length), category: e.category || '' };
+                  });
+                  setEmployees(sortByCategory(aligned, catCodes));
+                  alert('Import successful. Will auto-save shortly.');
+                  setShowImport(false);
+                  setImportData(null);
+                  setImportPreview([]);
+                }
+              }} className="px-3 py-1.5 bg-[#12213D] text-white rounded hover:bg-opacity-90 text-[13px] disabled:opacity-50">Import</button>
             </div>
           </div>
         </div>
