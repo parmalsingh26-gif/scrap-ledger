@@ -4,6 +4,9 @@ import autoTable from 'jspdf-autotable';
 import ExcelJS from 'exceljs';
 
 import { cn } from '../lib/utils';
+import allMonthsDataRaw from '../../all_months_attendance.json';
+
+const allMonthsData: Record<string, Employee[]> = allMonthsDataRaw as any;
 
 const STATUS = ["P","A","LAP","LHAP","CL","LEAVE","1/2 LEAVE","CR","NH","DUTY","SUNDAY",""];
 const MONTHS = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
@@ -193,23 +196,57 @@ export function AttendanceTimesheet() {
     setLoading(true); setDataLoaded(false);
     const nd = buildDays(y,m); setDays(nd);
     const fillUpTo = getAutoFillUpTo(y,m,nd.length);
+    
+    const applySeedFallback = () => {
+      const monthKey = `${MONTHS[m]} ${y}`;
+      if (allMonthsData[monthKey] && allMonthsData[monthKey].length > 0) {
+        const jsonEmps = allMonthsData[monthKey].map(e => {
+          const s = [...(e.status || [])];
+          while(s.length < nd.length) s.push('');
+          nd.forEach((d,i)=>{ if(d.isSunday && !s[i]) s[i]='SUNDAY'; });
+          return { ...e, status: s.slice(0, nd.length) };
+        });
+        setEmployees(sortByCategory(jsonEmps, catCodes));
+      } else {
+        setEmployees(sortByCategory(seedEmployees(nd,fillUpTo),catCodes));
+      }
+    };
+
     try {
       const saved: Employee[] = forceSeed ? [] : await fetch(`/api/attendance/${y}/${m}`).then(r=>r.json());
       if(Array.isArray(saved) && saved.length>0) {
+        const monthKey = `${MONTHS[m]} ${y}`;
+        const hasJson = allMonthsData[monthKey] && allMonthsData[monthKey].length > 0;
+        
         const aligned = saved.map(e => {
           const s=[...e.status];
           while(s.length<nd.length) s.push('');
           nd.forEach((d,i)=>{ if(d.isSunday&&!s[i]) s[i]='SUNDAY'; });
-          return {...e, status:s.slice(0,nd.length)};
+          
+          let overrides = {};
+          if (hasJson) {
+            const jsonEmp = allMonthsData[monthKey].find(je => je.id === e.id);
+            if (jsonEmp) {
+              overrides = {
+                name: jsonEmp.name,
+                pf: jsonEmp.pf,
+                tno: jsonEmp.tno,
+                category: jsonEmp.category,
+                workOrder: jsonEmp.workOrder
+              };
+            }
+          }
+          
+          return {...e, ...overrides, status:s.slice(0,nd.length)};
         });
         setEmployees(sortByCategory(aligned,catCodes));
       } else {
-        setEmployees(sortByCategory(seedEmployees(nd,fillUpTo),catCodes));
+        applySeedFallback();
       }
     } catch {
-      setEmployees(sortByCategory(seedEmployees(nd,fillUpTo),catCodes));
+      applySeedFallback();
     } finally { setLoading(false); setDataLoaded(true); }
-  }, []);
+  }, [catCodes]);
 
   useEffect(()=>{ loadMonth(year,month); },[]);
 

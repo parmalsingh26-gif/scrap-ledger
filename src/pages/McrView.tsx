@@ -1000,9 +1000,10 @@ export interface McrLotSuggestion {
   scrNo: string | null;
   plNo?: string | null;
   section: 'lot' | 'mp';
+  condnDate: string | null;
 }
 
-// getMcrLots now uses base JSON only (extras/edits are cloud — async)
+// getMcrLots is synchronous and only returns base JSON.
 export function getMcrLots(): McrLotSuggestion[] {
   const lotBase = mcrData.lotMaterialPosition as LotRow[];
   const mpBase = mcrData.mAndPItem as MPRow[];
@@ -1020,10 +1021,69 @@ export function getMcrLots(): McrLotSuggestion[] {
     scrNo: (r as any).scrNo ?? null,
     plNo: (r as any).plNo ?? null,
     section,
+    condnDate: r.date ?? null,
   });
 
   return [
     ...lotBase.map(r => toSuggestion(r, 'lot')),
     ...mpBase.map(r => toSuggestion(r, 'mp')),
   ];
+}
+
+// useMcrLots is async and fetches cloud edits/extras so OutwardEntry sees the latest data
+export function useMcrLots() {
+  const [lots, setLots] = useState<McrLotSuggestion[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const lotBase = mcrData.lotMaterialPosition as LotRow[];
+        const mpBase = mcrData.mAndPItem as MPRow[];
+
+        const [lotExtras, lotEdits, mpExtras, mpEdits] = await Promise.all([
+          mcrApi('/mcr/lot/extras').catch(() => []),
+          mcrApi('/mcr/lot/edits').catch(() => ({})),
+          mcrApi('/mcr/mp/extras').catch(() => []),
+          mcrApi('/mcr/mp/edits').catch(() => ({}))
+        ]);
+
+        const mergedLot = lotBase.map(r => ({ ...r, ...(lotEdits[r.id] || {}) }));
+        const allLot = [...mergedLot, ...lotExtras];
+
+        const mergedMp = mpBase.map(r => ({ ...r, ...(mpEdits[r.id] || {}) }));
+        const allMp = [...mergedMp, ...mpExtras];
+
+        const toSuggestion = (r: LotRow | MPRow, section: 'lot' | 'mp'): McrLotSuggestion => ({
+          id: r.id,
+          lotNo: r.lotNo ?? null,
+          material: r.material,
+          qty: r.qty,
+          unit: r.unit,
+          purchaser: r.purchaser ?? null,
+          eAuctionDate: (r as any).eAuctionDate ?? null,
+          deliveryDate: r.deliveryDate ?? null,
+          status: getStatus(r),
+          scrNo: (r as any).scrNo ?? null,
+          plNo: (r as any).plNo ?? null,
+          section,
+          condnDate: r.date ?? null,
+        });
+
+        setLots([
+          ...allLot.map(r => toSuggestion(r, 'lot')),
+          ...allMp.map(r => toSuggestion(r, 'mp')),
+        ]);
+      } catch (e) {
+        console.error("Error loading MCR lots:", e);
+        // fallback to synchronous loading
+        setLots(getMcrLots());
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  return { lots, loading };
 }

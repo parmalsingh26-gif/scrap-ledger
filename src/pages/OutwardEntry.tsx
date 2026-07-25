@@ -4,7 +4,7 @@ import { CategoryBadge } from '../components/CategoryBadge';
 import { ProtectedView } from '../components/ProtectedView';
 import { QRScannerModal } from '../components/QRScannerModal';
 import { useNavigate } from 'react-router-dom';
-import { getMcrLots } from './McrView';
+import { getMcrLots, useMcrLots } from './McrView';
 
 const GST_RATES = [0, 5, 12, 18];
 
@@ -57,8 +57,8 @@ export function OutwardEntry() {
   const [selectedMcrLot, setSelectedMcrLot] = useState<ReturnType<typeof getMcrLots>[0] | null>(null);
   const [mcrSearchFocused, setMcrSearchFocused] = useState(false);
 
-  // Load all MCR lots fresh each time (picks up localStorage edits)
-  const allMcrLots = useMemo(() => getMcrLots(), []);
+  // Load all MCR lots (this now fetches edits/extras from the backend)
+  const { lots: allMcrLots, loading: mcrLotsLoading } = useMcrLots();
 
   // Filter MCR suggestions based on search query
   const mcrSuggestions = useMemo(() => {
@@ -103,6 +103,17 @@ export function OutwardEntry() {
       if (parts.length === 3 && parts[2].length === 4) {
         const iso = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
         if (!isNaN(Date.parse(iso))) setDateSold(iso);
+      }
+    }
+
+    // Auto-fill Date Lot Applied from Condemnation Date (condnDate) (convert DD.MM.YYYY or DD/MM/YYYY -> YYYY-MM-DD)
+    if (lot.condnDate && typeof lot.condnDate === 'string' && lot.condnDate.toLowerCase() !== 'cancelled') {
+      const firstDate = lot.condnDate.split(/[&,\s]/)[0].trim();
+      const normalized = firstDate.replace(/\./g, '/');
+      const parts = normalized.split('/');
+      if (parts.length === 3 && parts[2].length === 4) {
+        const iso = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        if (!isNaN(Date.parse(iso))) setDateLotApplied(iso);
       }
     }
   };
@@ -511,7 +522,7 @@ export function OutwardEntry() {
                       {!mcrSearchQuery && (
                         <p className="text-[10px] text-indigo-400 mt-1.5 ml-1 flex items-center gap-1">
                           <span className="material-symbols-outlined text-[12px]">info</span>
-                          ⏳ Pending lots automatically dikh rahe hain — type karo to filter ho
+                          {mcrLotsLoading ? '⏳ Loading latest cloud data...' : '⏳ Pending lots automatically dikh rahe hain — type karo to filter ho'}
                         </p>
                       )}
                     </div>
