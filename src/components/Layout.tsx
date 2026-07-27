@@ -15,6 +15,7 @@ const navItems = [
   { name: 'Documents', path: '/documents', icon: 'folder_open' },
   { name: 'MCR Report', path: '/mcr', icon: 'description' },
   { name: 'Attendance', path: '/attendance', icon: 'co_present' },
+  { name: 'Contracts', path: '/contracts', icon: 'handshake' },
   { name: 'Task Planner', path: '/tasks', icon: 'checklist' },
   { name: 'Notebook', path: '/notebook', icon: 'menu_book' },
   { name: 'Admin Settings', path: '/admin', icon: 'admin_panel_settings' },

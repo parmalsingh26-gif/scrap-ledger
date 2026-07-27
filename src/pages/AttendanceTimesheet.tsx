@@ -171,7 +171,7 @@ function InlineEdit({value, onChange, className, printClass}: {value:string; onC
 }
 
 // Default TS header values
-const TS_HDR_DEFAULT = { title:'TIME SHEET   PAY GROUP 0827   FOR DIRECT WORKER   BVP WORKSHOP', section:'Scrap', secCode:'632', consignee:'93798', signatory:'SSE/Scrap-BVPW', place:'BVP WORKSHOP' };
+const TS_HDR_DEFAULT = { title:'TIME SHEET   PAY GROUP 0827   FOR DIRECT WORKER   BVP WORKSHOP', section:'Scrap', secCode:'632', consignee:'93798', signatory:'SSE/Scrap-BVPW', place:'BVP WORKSHOP', dutyWorkOrder:'30726244' };
 
 export function AttendanceTimesheet() {
   const now = new Date();
@@ -905,7 +905,7 @@ export function AttendanceTimesheet() {
             <table className="w-full border-collapse text-[11.5px] mb-0">
               <tbody>
                 <tr>
-                  <td colSpan={workOrders.length*5+4} className="border border-[#12213D] p-0">
+                  <td colSpan={workOrders.length*5+5} className="border border-[#12213D] p-0">
                     <div className="flex">
                       <div className="flex-1 flex items-center justify-center font-bold text-[13px] py-2 px-4 border-r border-[#12213D]">
                         <InlineEdit value={tsHdr.title} onChange={v=>updHdr('title',v)} className="font-bold text-[13px] text-center w-full" />
@@ -926,7 +926,7 @@ export function AttendanceTimesheet() {
                   <td className="border border-[#D8D3C4] p-1 font-semibold">From</td>
                   <td className="border border-[#D8D3C4] p-1">01/{String(month+1).padStart(2,'0')}/{year}</td>
                   <td className="border border-[#D8D3C4] p-1 font-semibold">To</td>
-                  <td className="border border-[#D8D3C4] p-1" colSpan={workOrders.length*5}>{days.length}/{String(month+1).padStart(2,'0')}/{year}</td>
+                  <td className="border border-[#D8D3C4] p-1" colSpan={workOrders.length*5+1}>{days.length}/{String(month+1).padStart(2,'0')}/{year}</td>
                 </tr>
               </tbody>
             </table>
@@ -938,7 +938,7 @@ export function AttendanceTimesheet() {
               type WS={cr:number;leave:number;nh:number;duty:number;lncod:number;hours:number};
               const woCatSums:Record<string,WS>={};
               workOrders.forEach(wo=>{woCatSums[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0,hours:0};});
-              let catTot=0;
+              let catTot=0; let catHoursTot=0;
 
               return (
                 <table key={cat} className="w-full border-collapse text-[11.5px] mt-0">
@@ -947,29 +947,30 @@ export function AttendanceTimesheet() {
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center" rowSpan={2}>Category</td>
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center" rowSpan={2}>Code</td>
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center" rowSpan={2}>T.No.</td>
-                      <td className="border border-[#D8D3C4] p-1 font-bold text-center" colSpan={workOrders.length*6}>WORK ORDER NUMBER</td>
+                      <td className="border border-[#D8D3C4] p-1 font-bold text-center" colSpan={workOrders.length*5+1}>WORK ORDER NUMBER</td>
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center" rowSpan={2}>Total</td>
                     </tr>
                     <tr className="bg-[#F5F3EC]">
-                      {workOrders.map(wo=><td key={wo} colSpan={6} className="border border-[#D8D3C4] p-1 font-bold text-center">{wo}</td>)}
+                      {workOrders.map(wo=><td key={wo} colSpan={5} className="border border-[#D8D3C4] p-1 font-bold text-center">{wo}</td>)}
+                      <td className="border border-[#D8D3C4] p-1 font-bold text-center">{tsHdr.dutyWorkOrder}</td>
                     </tr>
                     <tr className="bg-[#EFECDF] text-[10.5px]">
                       <td className="border border-[#D8D3C4] p-0.5"/><td className="border border-[#D8D3C4] p-0.5"/><td className="border border-[#D8D3C4] p-0.5"/>
                       {workOrders.map(wo=>(
                         <React.Fragment key={wo}>
-                          {['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY','Hours'].map(h=>(
+                          {['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY'].map(h=>(
                             <td key={h} className="border border-[#D8D3C4] p-0.5 text-center font-bold">{h}</td>
                           ))}
                         </React.Fragment>
                       ))}
-                      <td className="border border-[#D8D3C4] p-0.5"/>
+                      <td className="border border-[#D8D3C4] p-0.5"/><td className="border border-[#D8D3C4] p-0.5"/>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((e,ri)=>{
                       const tv=getTsVals(e,days.length);
                       const tc=computeTotals(e,days.length); // computed (for mismatch check)
-                      catTot+=tv.total;
+                      catTot+=tv.total; catHoursTot+=tv.hours;
                       const wo=e.workOrder;
                       if(woCatSums[wo]){woCatSums[wo].cr+=tv.cr;woCatSums[wo].leave+=tv.leave;woCatSums[wo].nh+=tv.nh;woCatSums[wo].duty+=tv.duty;woCatSums[wo].lncod+=tv.lncod;woCatSums[wo].hours+=tv.hours;}
                       return (
@@ -986,10 +987,10 @@ export function AttendanceTimesheet() {
                                 <td className={TD_TS}>{isThis?<TsCell val={tv.nh} computed={tc.nhHrs} onChange={v=>setTsOv(e.id,'nh',v)} onReset={()=>setTsOv(e.id,'nh',tc.nhHrs)}/>:''}</td>
                                 <td className={TD_TS}>{isThis?<TsCell val={tv.duty} computed={tc.dutyHrs} onChange={v=>setTsOv(e.id,'duty',v)} onReset={()=>setTsOv(e.id,'duty',tc.dutyHrs)}/>:''}</td>
                                 <td className={TD_NE}>{isThis?tv.lncod:''}</td>
-                                <td className={TD_NE}>{isThis?tv.hours:''}</td>
                               </React.Fragment>
                             );
                           })}
+                          <td className={TD_NE}>{tv.hours}</td>
                           <td className="border border-[#D8D3C4] p-1 text-center font-semibold text-[11.5px]">{tv.total}</td>
                         </tr>
                       );
@@ -999,11 +1000,12 @@ export function AttendanceTimesheet() {
                       <td colSpan={3} className="border border-[#D8D3C4] p-1 text-center text-[11.5px]">Total Hours</td>
                       {workOrders.map(wo=>(
                         <React.Fragment key={wo}>
-                          {(['cr','leave','nh','duty','lncod','hours'] as const).map(k=>(
+                          {(['cr','leave','nh','duty','lncod'] as const).map(k=>(
                             <td key={k} className={TD_NE}>{woCatSums[wo]?.[k]??0}</td>
                           ))}
                         </React.Fragment>
                       ))}
+                      <td className={TD_NE}>{catHoursTot}</td>
                       <td className={TD_NE}>{catTot}</td>
                     </tr>
                   </tbody>
@@ -1016,13 +1018,14 @@ export function AttendanceTimesheet() {
               type GS2={cr:number;leave:number;nh:number;duty:number;lncod:number;hours:number};
               const gs2:Record<string,GS2>={};
               workOrders.forEach(wo=>{gs2[wo]={cr:0,leave:0,nh:0,duty:0,lncod:0,hours:0};});
+              let grandHoursTot=0;
               let grandTot2=0;
               const sumRows=tsCatOrder.map(cat=>{
                 const cr=tsEmployees.filter(e=>e.category===cat);
                 const cs:GS2={cr:0,leave:0,nh:0,duty:0,lncod:0,hours:0};
-                let ct=0;
-                cr.forEach(e=>{const tv=getTsVals(e,days.length);ct+=tv.total;grandTot2+=tv.total;const wo=e.workOrder;if(gs2[wo]){gs2[wo].cr+=tv.cr;gs2[wo].leave+=tv.leave;gs2[wo].nh+=tv.nh;gs2[wo].duty+=tv.duty;gs2[wo].lncod+=tv.lncod;gs2[wo].hours+=tv.hours;}cs.cr+=tv.cr;cs.leave+=tv.leave;cs.nh+=tv.nh;cs.duty+=tv.duty;cs.lncod+=tv.lncod;cs.hours+=tv.hours;});
-                return {cat,cs,ct};
+                let ct=0; let chours=0;
+                cr.forEach(e=>{const tv=getTsVals(e,days.length);ct+=tv.total;chours+=tv.hours;grandTot2+=tv.total;grandHoursTot+=tv.hours;const wo=e.workOrder;if(gs2[wo]){gs2[wo].cr+=tv.cr;gs2[wo].leave+=tv.leave;gs2[wo].nh+=tv.nh;gs2[wo].duty+=tv.duty;gs2[wo].lncod+=tv.lncod;gs2[wo].hours+=tv.hours;}cs.cr+=tv.cr;cs.leave+=tv.leave;cs.nh+=tv.nh;cs.duty+=tv.duty;cs.lncod+=tv.lncod;cs.hours+=tv.hours;});
+                return {cat,cs,ct,chours};
               });
               return (
                 <table className="w-full border-collapse text-[11.5px] mt-4">
@@ -1030,38 +1033,41 @@ export function AttendanceTimesheet() {
                     <tr className="bg-[#F5F3EC]">
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center">Category</td>
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center">Code</td>
-                      <td className="border border-[#D8D3C4] p-1 font-bold text-center" colSpan={workOrders.length*6}>WORK ORDER NUMBER</td>
+                      <td className="border border-[#D8D3C4] p-1 font-bold text-center" colSpan={workOrders.length*5+1}>WORK ORDER NUMBER</td>
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center">Total</td>
                     </tr>
                     <tr className="bg-[#F5F3EC]">
                       <td className="border border-[#D8D3C4] p-1"/><td className="border border-[#D8D3C4] p-1"/>
-                      {workOrders.map(wo=><td key={wo} colSpan={6} className="border border-[#D8D3C4] p-1 font-bold text-center">{wo}</td>)}
+                      {workOrders.map(wo=><td key={wo} colSpan={5} className="border border-[#D8D3C4] p-1 font-bold text-center">{wo}</td>)}
+                      <td className="border border-[#D8D3C4] p-1 font-bold text-center">{tsHdr.dutyWorkOrder}</td>
                       <td className="border border-[#D8D3C4] p-1"/>
                     </tr>
                     <tr className="bg-[#EFECDF] text-[10.5px]">
                       <td className="border border-[#D8D3C4] p-0.5"/><td className="border border-[#D8D3C4] p-0.5"/>
                       {workOrders.map(wo=>(
                         <React.Fragment key={wo}>
-                          {['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY','Hours'].map(h=>(
+                          {['CR','LEAVE','NH','ON DUTY','L+NH+CR+ON DUTY'].map(h=>(
                             <td key={h} className="border border-[#D8D3C4] p-0.5 text-center font-bold">{h}</td>
                           ))}
                         </React.Fragment>
                       ))}
                       <td className="border border-[#D8D3C4] p-0.5"/>
+                      <td className="border border-[#D8D3C4] p-0.5"/>
                     </tr>
                   </thead>
                   <tbody>
-                    {sumRows.map(({cat,cs,ct})=>(
+                    {sumRows.map(({cat,cs,ct,chours})=>(
                       <tr key={cat} className="italic text-[11px]">
                         <td className="border border-[#D8D3C4] p-1 text-center font-semibold not-italic">{cat}</td>
                         <td className={TD_NE}>{catCodes[cat]??''}</td>
                         {workOrders.map(wo=>(
                           <React.Fragment key={wo}>
-                            {(['cr','leave','nh','duty','lncod','hours'] as const).map(k=>(
+                            {(['cr','leave','nh','duty','lncod'] as const).map(k=>(
                               <td key={k} className={TD_NE}>{cs[k]??0}</td>
                             ))}
                           </React.Fragment>
                         ))}
+                        <td className={TD_NE}>{chours}</td>
                         <td className={TD_NE}>{ct}</td>
                       </tr>
                     ))}
@@ -1069,11 +1075,12 @@ export function AttendanceTimesheet() {
                       <td colSpan={2} className="border border-[#D8D3C4] p-1 text-center text-[11.5px]">Total Hours</td>
                       {workOrders.map(wo=>(
                         <React.Fragment key={wo}>
-                          {(['cr','leave','nh','duty','lncod','hours'] as const).map(k=>(
+                          {(['cr','leave','nh','duty','lncod'] as const).map(k=>(
                             <td key={k} className={TD_NE}>{gs2[wo]?.[k]??0}</td>
                           ))}
                         </React.Fragment>
                       ))}
+                      <td className={TD_NE}>{grandHoursTot}</td>
                       <td className={TD_NE + " font-bold"}>{grandTot2}</td>
                     </tr>
                   </tbody>

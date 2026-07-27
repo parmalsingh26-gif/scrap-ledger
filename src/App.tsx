@@ -20,6 +20,7 @@ import { SyncStatus } from './components/SyncStatus';
 import { DocumentManager } from './pages/DocumentManager';
 import { McrView } from './pages/McrView';
 import { AttendanceTimesheet } from './pages/AttendanceTimesheet';
+import { ContractManager } from './pages/ContractManager';
 
 function AppContent() {
   const { isLoggedIn } = useAuth();
@@ -41,6 +42,7 @@ function AppContent() {
           <Route path="/documents" element={<DocumentManager />} />
           <Route path="/mcr" element={<McrView />} />
           <Route path="/attendance" element={<AttendanceTimesheet />} />
+          <Route path="/contracts" element={<ContractManager />} />
           <Route path="/admin" element={<AdminSettings />} />
           <Route path="/tasks" element={<TaskPlanner />} />
           <Route path="/notebook" element={<NoteBook />} />
