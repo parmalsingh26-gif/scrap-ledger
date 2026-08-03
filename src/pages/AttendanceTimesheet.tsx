@@ -107,14 +107,17 @@ function sortByCategory(emps: Employee[], cc: Record<string,number>): Employee[]
 }
 
 function getStatusStyle(v:string) {
-  if(v==='P') return 'bg-[#E4F3E9] text-[#2E7D4F] border-[#2E7D4F]';
-  if(v==='A') return 'bg-[#FBE7E4] text-[#B23A2E] border-[#B23A2E]';
-  if(['LAP','LHAP','CL','LEAVE','1/2 LEAVE'].includes(v)) return 'bg-[#F1E9F4] text-[#6E4A7E] border-[#6E4A7E]';
-  if(['CR','DUTY'].includes(v)) return 'bg-[#E3F0EE] text-[#1F7A6C] border-[#1F7A6C]';
-  if(v==='NH') return 'bg-[#FFF3E0] text-[#E0A526] border-[#E0A526]';
-  if(v==='SUNDAY') return 'bg-[#ECEAE4] text-[#8A8377] border-[#8A8377]';
+  if(v==='P')    return 'bg-[#E4F3E9] text-[#2E7D4F] border-[#2E7D4F]';         // green
+  if(v==='A')    return 'bg-[#FBE7E4] text-[#B23A2E] border-[#B23A2E]';         // red
+  if(['LAP','LHAP','CL','LEAVE','1/2 LEAVE'].includes(v))
+                 return 'bg-[#F1E9F4] text-[#6E4A7E] border-[#6E4A7E]';         // purple
+  if(v==='CR')   return 'bg-[#DBEAFE] text-[#1565C0] border-[#1565C0]';         // blue (distinct)
+  if(v==='DUTY') return 'bg-[#FFF8E1] text-[#F57F17] border-[#F57F17]';         // amber-orange
+  if(v==='NH')   return 'bg-[#FFF3E0] text-[#E0A526] border-[#E0A526]';         // gold
+  if(v==='SUNDAY') return 'bg-[#ECEAE4] text-[#8A8377] border-[#8A8377]';       // grey
   return 'bg-white text-[#12213D] border-[#D8D3C4]';
 }
+
 
 const TH_DARK = "bg-[#12213D] text-white font-['IBM_Plex_Mono',monospace] font-semibold text-[11px] border border-[#D8D3C4] px-1 py-1 whitespace-nowrap";
 const TD_TS   = "border border-[#D8D3C4] p-0 text-center text-[11.5px]";
@@ -190,6 +193,7 @@ export function AttendanceTimesheet() {
   const [importPreview,setImportPreview] = useState<{key:string, count:number}[]>([]);
   const [selectedImportKey,setSelectedImportKey] = useState<string>('');
   const saveTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const isCarryForward = useRef(false);  // true when employees came from prev month carry-forward
   const [catCodes,setCatCodes] = useState<Record<string,number>>(()=>{
     try{const s=localStorage.getItem('catCodes');return s?{...DEFAULT_CAT_CODES,...JSON.parse(s)}:{...DEFAULT_CAT_CODES};}catch{return{...DEFAULT_CAT_CODES};}
   });
@@ -213,8 +217,9 @@ export function AttendanceTimesheet() {
     setLoading(true); setDataLoaded(false);
     const nd = buildDays(y,m); setDays(nd);
     const fillUpTo = getAutoFillUpTo(y,m,nd.length);
-    
-    const applySeedFallback = () => {
+
+    // ── Ultimate fallback: JSON or hardcoded seed ──
+    const applyJsonOrSeed = () => {
       const monthKey = `${MONTHS[m]} ${y}`;
       if (allMonthsData[monthKey] && allMonthsData[monthKey].length > 0) {
         const jsonEmps = allMonthsData[monthKey].map(e => {
@@ -229,9 +234,49 @@ export function AttendanceTimesheet() {
       }
     };
 
+    // ── Try previous month's saved data for carry-forward ──
+    // Returns the carried-forward employees or null if no prev data
+    const loadPrevMonthEmployees = async (): Promise<Employee[] | null> => {
+      const prevM = m === 0 ? 11 : m - 1;
+      const prevY = m === 0 ? y - 1 : y;
+      try {
+        const prevSaved = await fetch(`/api/attendance/${prevY}/${prevM}`).then(r => {
+          if (!r.ok) return [];
+          return r.json();
+        });
+        if (Array.isArray(prevSaved) && prevSaved.length > 0) {
+          return prevSaved.map(e => ({
+            ...e,
+            id: crypto.randomUUID(),
+            status: nd.map(d => d.isSunday ? 'SUNDAY' : ''),
+            tsOverride: undefined,
+          })) as Employee[];
+        }
+      } catch { /* ignore */ }
+      return null;
+    };
+
+    const applySeedFallback = async () => {
+      if (!forceSeed) {
+        const prevEmps = await loadPrevMonthEmployees();
+        if (prevEmps && prevEmps.length > 0) {
+          isCarryForward.current = true;  // mark: don't auto-save on this load
+          setEmployees(sortByCategory(prevEmps, catCodes));
+          return;
+        }
+      }
+      applyJsonOrSeed();
+    };
+
+
+    // If saved employees exist but NO status is filled, treat as untouched → try carry-forward
+    const hasRealStatus = (emps: Employee[]) =>
+      emps.some(e => e.status.some(s => s !== '' && s !== 'SUNDAY'));
+
     try {
       const saved: Employee[] = forceSeed ? [] : await fetch(`/api/attendance/${y}/${m}`).then(r=>r.json());
-      if(Array.isArray(saved) && saved.length>0) {
+      if(Array.isArray(saved) && saved.length>0 && hasRealStatus(saved)) {
+        // Month has actual user-entered data — use it
         const monthKey = `${MONTHS[m]} ${y}`;
         const hasJson = allMonthsData[monthKey] && allMonthsData[monthKey].length > 0;
         
@@ -258,11 +303,13 @@ export function AttendanceTimesheet() {
         });
         setEmployees(sortByCategory(aligned,catCodes));
       } else {
-        applySeedFallback();
+        // No data OR all-blank → try previous month carry-forward first
+        await applySeedFallback();
       }
     } catch {
-      applySeedFallback();
+      await applySeedFallback();
     } finally { setLoading(false); setDataLoaded(true); }
+
   }, [catCodes]);
 
   useEffect(()=>{ loadMonth(year,month); },[]);
@@ -270,6 +317,8 @@ export function AttendanceTimesheet() {
   // ── Debounced auto-save ────────────────────────────────────────────
   useEffect(()=>{
     if(!dataLoaded||employees.length===0) return;
+    // Skip auto-save on initial carry-forward load — user hasn't made changes yet
+    if (isCarryForward.current) { isCarryForward.current = false; return; }
     if(saveTimer.current) clearTimeout(saveTimer.current);
     setSaveErr('');
     saveTimer.current = setTimeout(async()=>{
@@ -302,6 +351,22 @@ export function AttendanceTimesheet() {
     setEmployees(p=>p.map(e=>{if(e.id!==id)return e;const s=[...e.status];s[di]=v;return{...e,status:s};}));
   const removeEmp = (id:string) =>
     setEmployees(p=>p.filter(e=>e.id!==id).map((e,i)=>({...e,sr:i+1})));
+
+  // ── Bulk Mark: mark all employees on a given day with a status ────────────────
+  const [quickFillStatus, setQuickFillStatus] = useState<string>('P');
+  const markDayStatus = (di: number, status: string) => {
+    setEmployees(p => p.map(e => {
+      const s = [...e.status];
+      if (s[di] !== 'SUNDAY') s[di] = status;
+      return { ...e, status: s };
+    }));
+  };
+  const markAllDaysStatus = (status: string) => {
+    setEmployees(p => p.map(e => ({
+      ...e,
+      status: e.status.map(s => s === 'SUNDAY' ? 'SUNDAY' : status),
+    })));
+  };
 
   // TS override setter — stored on employee, auto-saves to DB
   const setTsOv = (id:string, field:keyof TsOverride, v:number) =>
@@ -744,11 +809,21 @@ export function AttendanceTimesheet() {
           .only-print-ts { display: block !important; }
           thead { display: table-header-group; }
           tr    { page-break-inside: avoid; }
-          table { font-size: 9.5px !important; }
-          @page  { size: A4 portrait; margin: 8mm; }
+          table {
+            font-size: 8.5px !important;
+            border-collapse: collapse !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          td, th {
+            border: 0.6px solid #000 !important;
+            padding: 1.5px 3px !important;
+          }
+          @page { size: A4 portrait; margin: 7mm; }
         }
         .only-print-ts { display: none; }
       `}</style>
+
 
       {/* ── TOP HEADER — hidden on print ── */}
       <div className="no-print w-full max-w-[1400px] mx-auto bg-[#F5F3EC] text-[#12213D] font-['IBM_Plex_Sans',sans-serif] px-6 pt-6">
@@ -774,6 +849,24 @@ export function AttendanceTimesheet() {
           <span className={`no-print text-[11px] ml-1 ${saving?'text-[#E0A526]':saveErr?'text-[#B23A2E]':'text-[#2E7D4F]'}`}>
             {saving?'⏳ Saving…':saveErr?'⚠ '+saveErr:dataLoaded?'✓ Saved':''}
           </span>
+
+          {/* ── Quick Fill: Bulk status setter ── */}
+          <span className="w-px h-5 bg-[#D8D3C4] mx-1" />
+          <label className="text-[11px] text-[#3C4A66] font-semibold">Quick Fill:</label>
+          <select
+            value={quickFillStatus}
+            onChange={e => setQuickFillStatus(e.target.value)}
+            className="border border-[#D8D3C4] bg-white px-2 py-1.5 text-[12px] text-[#12213D] rounded-sm"
+            title="Yeh status select karo phir niche buttons se apply karo"
+          >
+            {STATUS.filter(s=>s!=='').map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <button
+            title={`Sab employees ke sab din ${quickFillStatus} karo (SUNDAY chhodke)`}
+            onClick={() => { if(window.confirm(`Sab employees ke SAARE din '${quickFillStatus}' mark karo? (SUNDAY skip hogi)`)) markAllDaysStatus(quickFillStatus); }}
+            className="border border-[#12213D] bg-[#12213D] text-white px-3 py-1 text-[11px] font-semibold rounded-sm hover:opacity-80"
+          >All Days ✓</button>
+
           <span className="flex-1" />
           <button onClick={handleAdd} className="border border-[#12213D] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">+ Add Employee</button>
           <button onClick={()=>setShowImport(true)} className="border border-[#12213D] px-4 py-2 text-[13px] font-semibold rounded-sm hover:opacity-80">↓ Import</button>
@@ -813,9 +906,31 @@ export function AttendanceTimesheet() {
                   <th className={TH_DARK} style={{position:'sticky',top:0,left:'288px',zIndex:20}}>T.No/Desig.</th>
                   <th className={TH_DARK} style={{position:'sticky',top:0,zIndex:10}}>Category</th>
                   <th className={TH_DARK} style={{position:'sticky',top:0,zIndex:10}}>Work Order</th>
-                  {days.map(d=>(
-                    <th key={d.num} className={cn(TH_DARK, d.isSunday && "bg-[#5B5648]")} style={{position:'sticky',top:0,zIndex:10}}>{d.num}</th>
+                  {days.map((d,di)=>(
+                    <th key={d.num} className={cn(TH_DARK, d.isSunday && "bg-[#5B5648]")} style={{position:'sticky',top:0,zIndex:10}}>
+                      <div className="flex flex-col items-center gap-0" style={{minWidth:'52px'}}>
+                        <span className="mb-0.5">{d.num}</span>
+                        {!d.isSunday ? (
+                          <select
+                            title={`Day ${d.num}: sab employees ke liye status choose karo`}
+                            value=""
+                            onChange={e => { if(e.target.value) markDayStatus(di, e.target.value); }}
+                            onClick={e => e.stopPropagation()}
+                            className="no-print text-[8px] w-full bg-white/20 hover:bg-white/30 border-0 rounded text-white font-bold cursor-pointer focus:outline-none py-0.5 px-0"
+                            style={{appearance:'none', WebkitAppearance:'none', textAlignLast:'center'}}
+                          >
+                            <option value="" disabled style={{background:'#12213D'}}>▾</option>
+                            {STATUS.filter(s=>s!==''&&s!=='SUNDAY').map(s=>(
+                              <option key={s} value={s} style={{background:'#12213D',color:'#fff'}}>{s}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-[8px] opacity-50 no-print">SUN</span>
+                        )}
+                      </div>
+                    </th>
                   ))}
+
                   {["P","A","CR","LV","NH","DT","TOT","MDH",""].map((h,i)=>(
                     <th key={i} className={TH_DARK} style={{position:'sticky',top:0,zIndex:10}}>{h}</th>
                   ))}
@@ -871,11 +986,20 @@ export function AttendanceTimesheet() {
             </table>
             {/* Legend */}
             <div className="flex gap-3 flex-wrap mt-2 text-[11px] text-[#3C4A66]">
-              {[['#2E7D4F','P — Present'],['#B23A2E','A — Absent'],['#6E4A7E','LAP/LHAP/CL/LEAVE'],['#1F7A6C','CR/DUTY'],['#8A8377','SUNDAY'],['#E0A526','NH']].map(([c,l])=>(
+              {[
+                ['#2E7D4F','P — Present'],
+                ['#B23A2E','A — Absent'],
+                ['#6E4A7E','LAP/LHAP/CL/LEAVE'],
+                ['#1565C0','CR'],
+                ['#F57F17','DUTY'],
+                ['#E0A526','NH'],
+                ['#8A8377','SUNDAY'],
+              ].map(([c,l])=>(
                 <span key={l} className="inline-flex items-center gap-1.5"><i className="w-2.5 h-2.5 rounded-[2px] inline-block" style={{background:c}} />{l}</span>
               ))}
               <span className="ml-auto text-[10px]">Blank = entry pending &nbsp;|&nbsp; Time Sheet CR/LEAVE/NH/ON DUTY cells are editable</span>
             </div>
+
           </div>
         )}
 
@@ -902,7 +1026,7 @@ export function AttendanceTimesheet() {
 
             {/* Header — double-click any field to edit */}
             <p className="no-print text-[10px] text-[#3C4A66] mb-1">💡 Double-click any heading, section, or signature text to edit it. CR / LEAVE / NH / ON DUTY cells are directly editable.</p>
-            <table className="w-full border-collapse text-[11.5px] mb-0">
+            <table className="w-full border-collapse text-[11.5px] mb-0" style={{WebkitPrintColorAdjust:'exact', printColorAdjust:'exact'}}>
               <tbody>
                 <tr>
                   <td colSpan={workOrders.length*5+5} className="border border-[#12213D] p-0">
@@ -941,7 +1065,7 @@ export function AttendanceTimesheet() {
               let catTot=0; let catHoursTot=0;
 
               return (
-                <table key={cat} className="w-full border-collapse text-[11.5px] mt-0">
+                <table key={cat} className="w-full border-collapse text-[11.5px] mt-0" style={{WebkitPrintColorAdjust:'exact', printColorAdjust:'exact'}}>
                   <thead>
                     <tr className="bg-[#F5F3EC]">
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center" rowSpan={2}>Category</td>
@@ -1028,7 +1152,7 @@ export function AttendanceTimesheet() {
                 return {cat,cs,ct,chours};
               });
               return (
-                <table className="w-full border-collapse text-[11.5px] mt-4">
+                <table className="w-full border-collapse text-[11.5px] mt-4" style={{WebkitPrintColorAdjust:'exact', printColorAdjust:'exact'}}>
                   <thead>
                     <tr className="bg-[#F5F3EC]">
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center">Category</td>
@@ -1179,7 +1303,8 @@ export function AttendanceTimesheet() {
                     const s = [...(e.status || [])];
                     while (s.length < nd.length) s.push('');
                     nd.forEach((d, i) => { if (d.isSunday) s[i] = 'SUNDAY'; else if(s[i]==='SUNDAY') s[i]=''; });
-                    return { ...e, status: s.slice(0, nd.length), category: e.category || '' };
+                    // Always regenerate ID so import is treated as fresh data
+                    return { ...e, id: crypto.randomUUID(), status: s.slice(0, nd.length), category: e.category || '' };
                   });
                   setEmployees(sortByCategory(aligned, catCodes));
                   alert('Import successful. Will auto-save shortly.');

@@ -6,6 +6,27 @@ import { QRScannerModal } from '../components/QRScannerModal';
 import { useNavigate } from 'react-router-dom';
 import { getMcrLots, useMcrLots } from './McrView';
 
+// ── MCR API helper (same proxy as McrView) ────────────────────────────────────
+const MCR_API_BASE = '/api';  // Vite dev proxy + prod both serve /api
+async function mcrEditSave(section: string, rowId: string, data: Record<string, string>) {
+  try {
+    await fetch(`${MCR_API_BASE}/mcr/${section}/edits`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rowId, data }),
+    });
+  } catch (e) {
+    console.warn('[MCR Sync] Failed to update MCR:', e);
+  }
+}
+
+/** Convert YYYY-MM-DD → DD/MM/YYYY (for MCR field format) */
+function isoToMcrDate(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 const GST_RATES = [0, 5, 12, 18];
 
 const today = new Date().toISOString().split('T')[0];
@@ -323,6 +344,25 @@ export function OutwardEntry() {
 
       await db.outwardEntries.add(entryData);
 
+      // ── MCR Bidirectional Sync ─────────────────────────────────────────────
+      // Jab MCR lot select tha, to MCR ke BLANK fields outward entry ke data se fill karo
+      // (sirf blank fields — jo already bhara hai wo override nahi hoga)
+      if (selectedMcrLot && !selectedMcrLot.id.startsWith('new_')) {
+        const mcrUpdates: Record<string, string> = {};
+        if (!selectedMcrLot.deliveryDate && dateDelivered)
+          mcrUpdates.deliveryDate = isoToMcrDate(dateDelivered);
+        if (!selectedMcrLot.purchaser && firmName)
+          mcrUpdates.purchaser = firmName;
+        if (!selectedMcrLot.lotNo && lotNumber)
+          mcrUpdates.lotNo = lotNumber;
+        if (!selectedMcrLot.eAuctionDate && dateSold)
+          mcrUpdates.eAuctionDate = isoToMcrDate(dateSold);
+        if (Object.keys(mcrUpdates).length > 0) {
+          await mcrEditSave(selectedMcrLot.section || 'lot', selectedMcrLot.id, mcrUpdates);
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────────
+
       // Auto-save HSN to item master
       const selectedItemObj = items?.find(i => i.id === Number(selectedItemId));
       if (selectedItemObj && hsnCode && selectedItemObj.hsnCode !== hsnCode) {
@@ -330,13 +370,15 @@ export function OutwardEntry() {
       }
 
       const hsnMsg = selectedItemObj && selectedItemObj.hsnCode !== hsnCode ? ' HSN bhi save ho gaya!' : '';
-      setStatus({ type: 'success', msg: `✅ Outward entry recorded successfully!${hsnMsg}` });
+      const mcrSyncMsg = selectedMcrLot && !selectedMcrLot.id.startsWith('new_') ? ' MCR bhi update ho gaya!' : '';
+      setStatus({ type: 'success', msg: `✅ Outward entry recorded successfully!${hsnMsg}${mcrSyncMsg}` });
 
       setSelectedItemId(''); setLotNumber(''); setHsnCode(''); setHsnAutoFilled(false);
       setUnitId(''); setFirmName(''); setFirmInput('');
       setWeightPerNos(''); setRcCount(''); setFcCount('');
       setRate(''); setGstRate(0); setDateLotApplied(''); setDateSold(today);
       setDeliveries([{ ...emptyDelivery(), isFinal: true }]);
+      setSelectedMcrLot(null); setMcrSearchQuery('');
       setTimeout(() => setStatus(null), 4000);
     } catch (err) {
       setStatus({ type: 'error', msg: 'Failed to record entry.' });
