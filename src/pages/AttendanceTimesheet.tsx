@@ -312,7 +312,8 @@ export function AttendanceTimesheet() {
 
   }, [catCodes]);
 
-  useEffect(()=>{ loadMonth(year,month); },[]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(()=>{ loadMonth(year,month); },[loadMonth]);
 
   // ── Debounced auto-save ────────────────────────────────────────────
   useEffect(()=>{
@@ -490,9 +491,9 @@ export function AttendanceTimesheet() {
     });
     y=(doc as any).lastAutoTable.finalY+8;
 
-    // Signature
+    // Signature — uses editable tsHdr.signatory (same as preview)
     doc.setFontSize(8);doc.setFont('helvetica','normal');
-    doc.text('SSE/Scrap-BVPW',PW-ML,y,{align:'right'});
+    doc.text(tsHdr.signatory,PW-ML,y,{align:'right'});
     doc.line(PW-ML-38,y+5,PW-ML,y+5);
     doc.setFontSize(7);
     doc.text('Signature & Stamp',PW-ML-19,y+9,{align:'center'});
@@ -1075,8 +1076,13 @@ export function AttendanceTimesheet() {
                       <td className="border border-[#D8D3C4] p-1 font-bold text-center" rowSpan={2}>Total</td>
                     </tr>
                     <tr className="bg-[#F5F3EC]">
-                      {workOrders.map(wo=><td key={wo} colSpan={5} className="border border-[#D8D3C4] p-1 font-bold text-center">{wo}</td>)}
-                      <td className="border border-[#D8D3C4] p-1 font-bold text-center">{tsHdr.dutyWorkOrder}</td>
+                      {workOrders.map(wo=>(
+                        <React.Fragment key={wo}>
+                          <td colSpan={4} className="border border-[#D8D3C4] p-0.5" />
+                          <td className="border border-[#D8D3C4] p-1 font-bold text-center text-[10px]">{wo}</td>
+                        </React.Fragment>
+                      ))}
+                      <td className="border border-[#D8D3C4] p-1 font-bold text-center text-[10px]">{tsHdr.dutyWorkOrder}</td>
                     </tr>
                     <tr className="bg-[#EFECDF] text-[10.5px]">
                       <td className="border border-[#D8D3C4] p-0.5"/><td className="border border-[#D8D3C4] p-0.5"/><td className="border border-[#D8D3C4] p-0.5"/>
@@ -1162,8 +1168,13 @@ export function AttendanceTimesheet() {
                     </tr>
                     <tr className="bg-[#F5F3EC]">
                       <td className="border border-[#D8D3C4] p-1"/><td className="border border-[#D8D3C4] p-1"/>
-                      {workOrders.map(wo=><td key={wo} colSpan={5} className="border border-[#D8D3C4] p-1 font-bold text-center">{wo}</td>)}
-                      <td className="border border-[#D8D3C4] p-1 font-bold text-center">{tsHdr.dutyWorkOrder}</td>
+                       {workOrders.map(wo=>(
+                         <React.Fragment key={wo}>
+                           <td colSpan={4} className="border border-[#D8D3C4] p-0.5" />
+                           <td className="border border-[#D8D3C4] p-1 font-bold text-center text-[10px]">{wo}</td>
+                         </React.Fragment>
+                       ))}
+                       <td className="border border-[#D8D3C4] p-1 font-bold text-center text-[10px]">{tsHdr.dutyWorkOrder}</td>
                       <td className="border border-[#D8D3C4] p-1"/>
                     </tr>
                     <tr className="bg-[#EFECDF] text-[10.5px]">

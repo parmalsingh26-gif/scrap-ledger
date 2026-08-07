@@ -163,9 +163,8 @@ export function Layout({ children }: { children: ReactNode }) {
             <GlobalSearch />
           </div>
           <button
-            className="text-on-surface-variant hover:text-primary transition-colors p-2 rounded-full hover:bg-white/50"
+            className="text-on-surface-variant hover:text-primary transition-colors p-2 rounded-full hover:bg-white/50 opacity-50 cursor-not-allowed"
             title="Notifications (coming soon)"
-            onClick={() => alert('Notifications feature coming soon!')}
           >
             <span className="material-symbols-outlined">notifications</span>
           </button>

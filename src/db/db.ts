@@ -361,6 +361,8 @@ export const db = {
   bvpCoachEntries: {
     toArray: (): Promise<BvpCoachEntry[]> => apiFetch('/bvpCoachEntries'),
     add: (data: any): Promise<BvpCoachEntry> => apiFetch('/bvpCoachEntries', { method: 'POST', body: JSON.stringify(data) }),
+    // ✅ FIX: update method added
+    update: (id: string, data: any): Promise<BvpCoachEntry> => apiFetch(`/bvpCoachEntries/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch(`/bvpCoachEntries/${id}`, { method: 'DELETE' }),
   },
   bvpSurveyEntries: {
@@ -376,7 +378,8 @@ export const db = {
   bvpMonthlyManualEntries: {
     toArray: (): Promise<BvpMonthlyManualEntry[]> => apiFetch('/bvpMonthlyManualEntries'),
     add: (data: any): Promise<BvpMonthlyManualEntry> => apiFetch('/bvpMonthlyManualEntries', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: any) => apiFetch(`/bvpMonthlyManualEntries`, { method: 'POST', body: JSON.stringify(data) }),
+    // ✅ FIX: update now correctly uses PUT /:id
+    update: (id: string, data: any) => apiFetch(`/bvpMonthlyManualEntries/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     put: (data: any) => apiFetch(`/bvpMonthlyManualEntries`, { method: 'POST', body: JSON.stringify(data) }),
     delete: (id: string) => apiFetch(`/bvpMonthlyManualEntries/${id}`, { method: 'DELETE' }),
   },

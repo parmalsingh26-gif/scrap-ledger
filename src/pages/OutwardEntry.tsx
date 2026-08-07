@@ -29,10 +29,11 @@ function isoToMcrDate(iso: string): string {
 
 const GST_RATES = [0, 5, 12, 18];
 
-const today = new Date().toISOString().split('T')[0];
+// ✅ FIX: function — always returns fresh date, never stale
+function getToday() { return new Date().toISOString().split('T')[0]; }
 
 function emptyDelivery(): DeliverySlot {
-  return { date: today, quantity: 0, isFinal: false };
+  return { date: getToday(), quantity: 0, isFinal: false };
 }
 
 export function OutwardEntry() {
@@ -62,7 +63,7 @@ export function OutwardEntry() {
   const [gstRate, setGstRate] = useState<number>(0);
 
   const [dateLotApplied, setDateLotApplied] = useState<string>('');
-  const [dateSold, setDateSold] = useState<string>(today);
+  const [dateSold, setDateSold] = useState<string>(getToday);
 
   // ── Multiple Delivery Slots ───────────────────────────────────────────────
   const [deliveries, setDeliveries] = useState<DeliverySlot[]>([{ ...emptyDelivery(), isFinal: true }]);
@@ -387,7 +388,7 @@ export function OutwardEntry() {
       setSelectedItemId(''); setLotNumber(''); setHsnCode(''); setHsnAutoFilled(false);
       setUnitId(''); setFirmName(''); setFirmInput('');
       setWeightPerNos(''); setRcCount(''); setFcCount('');
-      setRate(''); setGstRate(0); setDateLotApplied(''); setDateSold(today);
+      setRate(''); setGstRate(0); setDateLotApplied(''); setDateSold(getToday());
       setDeliveries([{ ...emptyDelivery(), isFinal: true }]);
       setSelectedMcrLot(null); setMcrSearchQuery('');
       setTimeout(() => setStatus(null), 4000);

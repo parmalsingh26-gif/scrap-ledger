@@ -117,7 +117,15 @@ const OutwardSchema = new mongoose.Schema({
   dateDelivered: String,
   weightPerNos: Number,
   rcCount: Number,
-  fcCount: Number
+  fcCount: Number,
+  // ✅ FIX: Multiple partial delivery slots
+  deliveries: [{
+    date: String,
+    quantity: Number,
+    isFinal: Boolean,
+  }],
+  // Outward rate fields
+  rate: Number,
 });
 const Outward = mongoose.model('OutwardEntry', OutwardSchema);
 
@@ -351,6 +359,46 @@ app.use('/api/bvpCoachEntries', makeBvpApi(BvpCoachEntry));
 app.use('/api/bvpSurveyEntries', makeBvpApi(BvpSurveyEntry));
 app.use('/api/bvpMpEntries', makeBvpApi(BvpMpEntry));
 app.use('/api/bvpMonthlyManualEntries', makeBvpApi(BvpMonthlyManualEntry));
+
+// ✅ FIX: BvpMonthlyManualEntry dedicated PUT (update by id)
+app.put('/api/bvpMonthlyManualEntries/:id', async (req, res) => {
+  try {
+    const record = await BvpMonthlyManualEntry.findOneAndUpdate(
+      { id: req.params.id },
+      { $set: { ...req.body, updatedAt: Date.now() } },
+      { new: true, upsert: true }
+    );
+    const ret = record.toObject();
+    delete ret._id; delete ret.__v;
+    res.json(ret);
+  } catch (err) {
+    console.error('BvpMonthlyManual PUT error:', err);
+    res.status(500).json({ error: 'Failed to update entry' });
+  }
+});
+
+// ✅ FIX: BvpCoachEntry dedicated PUT (update by id)
+app.put('/api/bvpCoachEntries/:id', async (req, res) => {
+  try {
+    const record = await BvpCoachEntry.findOneAndUpdate(
+      { id: req.params.id },
+      { $set: { ...req.body, updatedAt: Date.now() } },
+      { new: true, upsert: true }
+    );
+    if (!record) return res.status(404).json({ error: 'Entry not found' });
+    const ret = record.toObject();
+    delete ret._id; delete ret.__v;
+    res.json(ret);
+  } catch (err) {
+    console.error('BvpCoach PUT error:', err);
+    res.status(500).json({ error: 'Failed to update coach entry' });
+  }
+});
+
+// ✅ Health check endpoint (ultra-lightweight — no DB call)
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', ts: Date.now() });
+});
 
 // ========== BVP Batch Import (Replace by session) ==========
 app.post('/api/bvp/batch-import', async (req, res) => {
@@ -993,6 +1041,13 @@ const AttendanceEmployeeSchema = new mongoose.Schema({
   category: String,
   workOrder: String,
   status: [String],
+  // ✅ FIX: Manual Time Sheet overrides (CR/LEAVE/NH/DUTY editable in TS preview)
+  tsOverride: {
+    cr:    { type: Number, default: undefined },
+    leave: { type: Number, default: undefined },
+    nh:    { type: Number, default: undefined },
+    duty:  { type: Number, default: undefined },
+  },
 }, { _id: false });
 
 const AttendanceRegisterSchema = new mongoose.Schema({

@@ -34,6 +34,7 @@ function exportToCSV(
   // Header
   rows.push([
     'Type', 'Material', 'Lot Number', 'Date', 'Quantity', 'Unit',
+    'Rate (₹/unit)', 'Total Value (₹)',
     'Firm Name', 'HSN Code', 'Date Sold', 'Date Lot Applied',
     'Delivery Schedule', 'Final Delivery Date',
     'Machine Type', 'Cover Type', 'RC Count', 'FC Count'
@@ -59,6 +60,12 @@ function exportToCSV(
         deliverySchedule = `${formatDateSafe(out.dateDelivered)}: ${out.quantity} ${unitName} [FINAL]`;
       }
 
+      // ✅ FIX: rate and totalValue added for outward
+      const outRate = (raw as any).rate ? String((raw as any).rate) : '';
+      const outTotal = outRate && out.quantity
+        ? String((Number(outRate) * out.quantity).toFixed(2))
+        : '';
+
       rows.push([
         'OUTWARD',
         item?.name || 'Unknown',
@@ -66,6 +73,8 @@ function exportToCSV(
         formatDateSafe(entry.date),
         String(out.quantity),
         unitName,
+        outRate,
+        outTotal,
         out.firmName || '',
         out.hsnCode || '',
         formatDateSafe(out.dateSold),
@@ -76,6 +85,9 @@ function exportToCSV(
       ]);
     } else {
       const inw = raw as InwardEntry;
+      // ✅ FIX: rate and totalValue added for inward
+      const inwRate  = inw.rate       ? String(inw.rate)       : '';
+      const inwTotal = inw.totalValue ? String(inw.totalValue) : '';
       rows.push([
         'INWARD',
         item?.name || 'Unknown',
@@ -83,6 +95,8 @@ function exportToCSV(
         formatDateSafe(entry.date),
         String(inw.quantity),
         unitName,
+        inwRate,
+        inwTotal,
         '', '', '', '', '', '',
         inw.machineType || '',
         inw.coverType || '',
