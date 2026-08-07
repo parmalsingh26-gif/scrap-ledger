@@ -18,6 +18,8 @@ interface LotRow {
   lotNo: string | null;
   purchaser: string | null;
   deliveryDate: string | null;
+  rate?: string | number;
+  saleValue?: string | number;
   _isNew?: boolean;
 }
 
@@ -32,6 +34,8 @@ interface CoachRow {
   lotNo: string | null;
   purchaser: string | null;
   deliveryDate: string | null;
+  rate?: string | number;
+  saleValue?: string | number;
   _isNew?: boolean;
 }
 
@@ -46,6 +50,8 @@ interface WtaRow {
   poNo?: string | null;
   transporter?: string | null;
   deliveryDate: string | null;
+  rate?: string | number;
+  saleValue?: string | number;
   _isNew?: boolean;
 }
 
@@ -62,6 +68,8 @@ interface MPRow {
   lotNo: string | null;
   purchaser: string | null;
   deliveryDate: string | null;
+  rate?: string | number;
+  saleValue?: string | number;
   _isNew?: boolean;
 }
 
@@ -242,6 +250,8 @@ function LotTab() {
     { key: 'eAuctionDate', label: 'Auction Date', placeholder: 'DD/MM/YYYY' },
     { key: 'lotNo', label: 'Lot No', placeholder: 'Lot Number' },
     { key: 'purchaser', label: 'Purchaser', placeholder: 'Purchaser name' },
+    { key: 'rate', label: 'Rate', placeholder: 'Sale rate' },
+    { key: 'saleValue', label: 'Sale Value', placeholder: 'Total value' },
     { key: 'deliveryDate', label: 'Delivery Date', placeholder: 'DD/MM/YYYY' },
   ];
 
@@ -342,6 +352,8 @@ function LotTab() {
                 <th className="px-3 py-3 text-left font-bold">Auction Date</th>
                 <th className="px-3 py-3 text-left font-bold" style={{ minWidth: 160 }}>Lot No</th>
                 <th className="px-3 py-3 text-left font-bold" style={{ minWidth: 140 }}>Purchaser</th>
+                <th className="px-3 py-3 text-left font-bold" style={{ minWidth: 80 }}>Rate</th>
+                <th className="px-3 py-3 text-left font-bold" style={{ minWidth: 100 }}>Sale Value</th>
                 <th className="px-3 py-3 text-left font-bold" style={{ minWidth: 120 }}>Delivery Date</th>
                 <th className="px-3 py-3 text-left font-bold">Status</th>
                 <th className="px-3 py-3 text-left font-bold sticky right-0 bg-primary/90">Actions</th>
@@ -381,6 +393,8 @@ function LotTab() {
                     <td className="px-3 py-2 text-indigo-700 font-medium whitespace-nowrap">{row.eAuctionDate || '—'}</td>
                     <td className="px-3 py-2 font-mono font-bold text-[10px] text-on-surface">{row.lotNo || <span className="text-outline/40 font-normal">—</span>}</td>
                     <td className="px-3 py-2 max-w-[160px] truncate" title={row.purchaser || ''}>{row.purchaser || <span className="text-outline/40">—</span>}</td>
+                    <td className="px-3 py-2 font-mono font-bold text-on-surface">{row.rate || '—'}</td>
+                    <td className="px-3 py-2 font-mono font-bold text-emerald-600">{row.saleValue || '—'}</td>
                     <td className="px-3 py-2 text-outline text-[10px] max-w-[130px]">
                       {row.deliveryDate?.toString() || <span className="text-amber-500 font-bold">Not delivered</span>}
                     </td>
@@ -481,6 +495,7 @@ function CoachTab() {
     { key: 'coachNo', label: 'Coach No', placeholder: 'Coach Number' }, { key: 'crReportNo', label: 'CR Report No' },
     { key: 'date', label: 'Condn Date' }, { key: 'eAuctionDate', label: 'Auction Date' },
     { key: 'lotNo', label: 'Lot No', placeholder: 'Lot Number' }, { key: 'purchaser', label: 'Purchaser' },
+    { key: 'rate', label: 'Rate' }, { key: 'saleValue', label: 'Sale Value' },
     { key: 'deliveryDate', label: 'Delivery Date' },
   ];
 
@@ -527,7 +542,7 @@ function CoachTab() {
           <table className="w-full text-xs border-collapse" style={{ minWidth: 1000 }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-indigo-600 text-white">
-                {['#','Type','Qty','Coach No','CR Report No','Condn Date','Auction Date','Lot No','Purchaser','Delivery Date','Status','Actions'].map(h => (
+                {['#','Type','Qty','Coach No','CR Report No','Condn Date','Auction Date','Lot No','Purchaser','Rate','Sale Value','Delivery Date','Status','Actions'].map(h => (
                   <th key={h} className="px-3 py-3 text-left font-bold whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -606,6 +621,7 @@ function WtaTab() {
     { key: 'type', label: 'Type' }, { key: 'plNo', label: 'PL No' }, { key: 'material', label: 'Material' },
     { key: 'qty', label: 'Qty', type: 'number' }, { key: 'unit', label: 'Unit' },
     { key: 'railway', label: 'Railway' }, { key: 'poNo', label: 'PO No' }, { key: 'transporter', label: 'Transporter' },
+    { key: 'rate', label: 'Rate' }, { key: 'saleValue', label: 'Sale Value' },
     { key: 'deliveryDate', label: 'Delivery Date' },
   ];
 
@@ -650,10 +666,10 @@ function WtaTab() {
       })()}
       <div className="rounded-2xl border border-outline-variant/20 overflow-hidden shadow-sm">
         <div className="overflow-x-auto max-h-[55vh] overflow-y-auto">
-          <table className="w-full text-xs border-collapse" style={{ minWidth: 900 }}>
+          <table className="w-full text-xs border-collapse" style={{ minWidth: 1000 }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-emerald-700 text-white">
-                {['#','Type','PL No','Material','Qty','Unit','Railway','PO No','Transporter','Delivery Date','Status','Actions'].map(h => (
+                {['#','Type','PL No','Material','Qty','Unit','Railway','PO No','Transporter','Rate','Sale Value','Delivery Date','Status','Actions'].map(h => (
                   <th key={h} className="px-3 py-3 text-left font-bold whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -673,6 +689,8 @@ function WtaTab() {
                     <td className="px-3 py-2 text-outline">{(row as any).railway || '—'}</td>
                     <td className="px-3 py-2 font-mono text-[10px]">{(row as any).poNo || '—'}</td>
                     <td className="px-3 py-2">{(row as any).transporter || '—'}</td>
+                    <td className="px-3 py-2 font-mono font-bold text-on-surface">{(row as any).rate || '—'}</td>
+                    <td className="px-3 py-2 font-mono font-bold text-emerald-700">{(row as any).saleValue || '—'}</td>
                     <td className="px-3 py-2 text-outline text-[10px]">{row.deliveryDate?.toString() || <span className="text-amber-500 font-bold">Not delivered</span>}</td>
                     <td className="px-3 py-2"><StatusBadge status={status} />{saved === row.id && <span className="ml-1 text-[9px] text-emerald-600 font-bold">☁️ Saved!</span>}</td>
                     <td className="px-3 py-2">
@@ -727,7 +745,9 @@ function MPTab() {
     { key: 'type', label: 'Type' }, { key: 'plNo', label: 'PL No' }, { key: 'material', label: 'Material' },
     { key: 'qty', label: 'Qty', type: 'number' }, { key: 'unit', label: 'Unit' }, { key: 'scrNo', label: 'SCR No' },
     { key: 'date', label: 'Condn Date' }, { key: 'eAuctionDate', label: 'Auction Date' },
-    { key: 'lotNo', label: 'Lot No' }, { key: 'purchaser', label: 'Purchaser' }, { key: 'deliveryDate', label: 'Delivery Date' },
+    { key: 'lotNo', label: 'Lot No' }, { key: 'purchaser', label: 'Purchaser' }, 
+    { key: 'rate', label: 'Rate' }, { key: 'saleValue', label: 'Sale Value' },
+    { key: 'deliveryDate', label: 'Delivery Date' },
   ];
 
   if (loading) return <div className="flex items-center justify-center py-20 gap-3 text-outline"><span className="material-symbols-outlined animate-spin text-violet-600">progress_activity</span>Loading from cloud...</div>;
@@ -774,7 +794,7 @@ function MPTab() {
           <table className="w-full text-xs border-collapse" style={{ minWidth: 1100 }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-violet-700 text-white">
-                {['#','Type','PL No','Material','Qty','Unit','SCR No','Condn Date','Auction Date','Lot No','Purchaser','Delivery Date','Status','Actions'].map(h => (
+                {['#','Type','PL No','Material','Qty','Unit','SCR No','Condn Date','Auction Date','Lot No','Purchaser','Rate','Sale Value','Delivery Date','Status','Actions'].map(h => (
                   <th key={h} className="px-3 py-3 text-left font-bold whitespace-nowrap">{h}</th>
                 ))}
               </tr>

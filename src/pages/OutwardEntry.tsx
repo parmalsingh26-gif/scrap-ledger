@@ -357,6 +357,17 @@ export function OutwardEntry() {
           mcrUpdates.lotNo = lotNumber;
         if (!selectedMcrLot.eAuctionDate && dateSold)
           mcrUpdates.eAuctionDate = isoToMcrDate(dateSold);
+        
+        if (!selectedMcrLot.rate && rate)
+          mcrUpdates.rate = String(rate);
+        
+        const qty = totalQtyFromDeliveries;
+        const r = Number(rate);
+        if (qty && r) {
+          const totalValue = (qty * r).toFixed(2);
+          if (!selectedMcrLot.saleValue) mcrUpdates.saleValue = totalValue;
+        }
+        
         if (Object.keys(mcrUpdates).length > 0) {
           await mcrEditSave(selectedMcrLot.section || 'lot', selectedMcrLot.id, mcrUpdates);
         }
