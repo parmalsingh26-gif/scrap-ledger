@@ -1021,6 +1021,8 @@ export interface McrLotSuggestion {
   plNo?: string | null;
   section: 'lot' | 'mp';
   condnDate: string | null;
+  rate?: string | null;
+  saleValue?: string | null;
 }
 
 // getMcrLots is synchronous and only returns base JSON.
@@ -1042,6 +1044,8 @@ export function getMcrLots(): McrLotSuggestion[] {
     plNo: (r as any).plNo ?? null,
     section,
     condnDate: r.date ?? null,
+    rate: (r as any).rate ?? null,
+    saleValue: (r as any).saleValue ?? null,
   });
 
   return [
@@ -1088,6 +1092,8 @@ export function useMcrLots() {
           plNo: (r as any).plNo ?? null,
           section,
           condnDate: r.date ?? null,
+          rate: (r as any).rate ?? null,
+          saleValue: (r as any).saleValue ?? null,
         });
 
         setLots([

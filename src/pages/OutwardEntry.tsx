@@ -10,13 +10,41 @@ import { getMcrLots, useMcrLots } from './McrView';
 const MCR_API_BASE = '/api';  // Vite dev proxy + prod both serve /api
 async function mcrEditSave(section: string, rowId: string, data: Record<string, string>) {
   try {
+    // Fetch existing edits to preserve fields (e.g. purchaser, deliveryDate) that were previously edited
+    const res = await fetch(`${MCR_API_BASE}/mcr/${section}/edits`);
+    const allEdits = await res.json();
+    const existingEdits = allEdits[rowId] || {};
+
+    const mergedData = { ...existingEdits, ...data };
+
     await fetch(`${MCR_API_BASE}/mcr/${section}/edits`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rowId, data }),
+      body: JSON.stringify({ rowId, data: mergedData }),
     });
   } catch (e) {
     console.warn('[MCR Sync] Failed to update MCR:', e);
+  }
+}
+
+async function mcrExtraUpdate(section: string, rowId: string, data: Record<string, string>) {
+  try {
+    const res = await fetch(`${MCR_API_BASE}/mcr/${section}/extras`);
+    const allExtras = await res.json();
+    const existingExtra = allExtras.find((r: any) => r.id === rowId || r.rowId === rowId);
+    
+    if (existingExtra) {
+      const mergedData = { ...existingExtra, ...data };
+      delete mergedData._isNew; // clean up client-only flag before saving
+
+      await fetch(`${MCR_API_BASE}/mcr/${section}/extras`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rowId, data: mergedData }),
+      });
+    }
+  } catch (e) {
+    console.warn('[MCR Sync] Failed to update MCR extra:', e);
   }
 }
 
@@ -348,7 +376,7 @@ export function OutwardEntry() {
       // ── MCR Bidirectional Sync ─────────────────────────────────────────────
       // Jab MCR lot select tha, to MCR ke BLANK fields outward entry ke data se fill karo
       // (sirf blank fields — jo already bhara hai wo override nahi hoga)
-      if (selectedMcrLot && !selectedMcrLot.id.startsWith('new_')) {
+      if (selectedMcrLot) {
         const mcrUpdates: Record<string, string> = {};
         if (!selectedMcrLot.deliveryDate && dateDelivered)
           mcrUpdates.deliveryDate = isoToMcrDate(dateDelivered);
@@ -370,7 +398,11 @@ export function OutwardEntry() {
         }
         
         if (Object.keys(mcrUpdates).length > 0) {
-          await mcrEditSave(selectedMcrLot.section || 'lot', selectedMcrLot.id, mcrUpdates);
+          if (selectedMcrLot.id.startsWith('new_')) {
+            await mcrExtraUpdate(selectedMcrLot.section || 'lot', selectedMcrLot.id, mcrUpdates);
+          } else {
+            await mcrEditSave(selectedMcrLot.section || 'lot', selectedMcrLot.id, mcrUpdates);
+          }
         }
       }
       // ──────────────────────────────────────────────────────────────────────
@@ -382,7 +414,7 @@ export function OutwardEntry() {
       }
 
       const hsnMsg = selectedItemObj && selectedItemObj.hsnCode !== hsnCode ? ' HSN bhi save ho gaya!' : '';
-      const mcrSyncMsg = selectedMcrLot && !selectedMcrLot.id.startsWith('new_') ? ' MCR bhi update ho gaya!' : '';
+      const mcrSyncMsg = selectedMcrLot ? ' MCR bhi update ho gaya!' : '';
       setStatus({ type: 'success', msg: `✅ Outward entry recorded successfully!${hsnMsg}${mcrSyncMsg}` });
 
       setSelectedItemId(''); setLotNumber(''); setHsnCode(''); setHsnAutoFilled(false);
