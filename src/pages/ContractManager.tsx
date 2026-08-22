@@ -10,10 +10,8 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, PieChart, Pie, Cell
 } from "recharts";
-import { jsPDF } from "jspdf";
-import "jspdf-autotable";
-import ExcelJS from "exceljs";
-
+import { exportToExcel, exportToPDF } from "../utils/exportUtils";
+import { PrintTemplate } from "../components/PrintTemplate";
 function Portal({ children }: { children: React.ReactNode }) {
   return ReactDOM.createPortal(children, document.body);
 }
@@ -72,7 +70,8 @@ const entryHours = (e: any, timeMode: string) => {
 
 const entryNetHours = (e: any, timeMode: string, restMinsPerEntry: number) => {
   const gross = entryHours(e, timeMode);
-  return +(Math.max(0, gross - restMinsPerEntry / 60)).toFixed(2);
+  const deduct = e.noRest ? 0 : restMinsPerEntry;
+  return +(Math.max(0, gross - deduct / 60)).toFixed(2);
 };
 
 function recalcEquipmentMonth(month: any, timeMode: string) {
@@ -564,7 +563,7 @@ function EquipmentDetail({ contract, update, notify }: any) {
   const [selIdx, setSelIdx] = useState(contract.months.length - 1);
   const idx = Math.min(Math.max(selIdx, 0), Math.max(contract.months.length - 1, 0));
   const month = contract.months[idx];
-  const [draft, setDraft] = useState({ date: "", vehicle: contract.vehicles?.[0] || "", inTime: "", outTime: "", inTime2: "", outTime2: "" });
+  const [draft, setDraft] = useState({ date: "", vehicle: contract.vehicles?.[0] || "", inTime: "", outTime: "", inTime2: "", outTime2: "", noRest: false });
   const [newVehicle, setNewVehicle] = useState("");
   const [addNCount, setAddNCount] = useState(1);
 
@@ -598,7 +597,7 @@ function EquipmentDetail({ contract, update, notify }: any) {
       ...c,
       months: c.months.map((m: any, i: number) => i === idx ? { ...m, entries: [...m.entries, entry] } : m),
     }));
-    setDraft({ date: "", vehicle: draft.vehicle, inTime: "", outTime: "", inTime2: "", outTime2: "" });
+    setDraft({ date: "", vehicle: draft.vehicle, inTime: "", outTime: "", inTime2: "", outTime2: "", noRest: false });
   };
 
   const cloneEntryBelow = (e: any) => {
@@ -665,51 +664,12 @@ function EquipmentDetail({ contract, update, notify }: any) {
     notify(`${newMonth.label} added, opening balance carried forward`);
   };
 
-  const exportPDF = () => {
-    const doc = new jsPDF({ orientation: "portrait" });
-    doc.setFontSize(14);
-    doc.text(`Contract: ${contract.name}`, 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Firm: ${contract.firm} | LOA: ${contract.loaNo || "-"}`, 14, 22);
-    doc.text(`Month: ${month.label}`, 14, 28);
-    doc.text(`Opening: ${month.previousRemaining} | Used: ${used} | Remaining: ${remaining} ${contract.unit}`, 14, 34);
-    const head = contract.timeMode === "split"
-      ? [["Date", "Vehicle", "B/N In", "B/N Out", "A/N In", "A/N Out", "Hrs"]]
-      : [["Date", "Vehicle", "In Time", "Out Time", "Hrs"]];
-    const body = month.entries.map((e: any) => contract.timeMode === "split"
-      ? [e.date, e.vehicle, e.inTime, e.outTime, e.inTime2, e.outTime2, entryNetHours(e, contract.timeMode, restMins)]
-      : [e.date, e.vehicle, e.inTime, e.outTime, entryNetHours(e, contract.timeMode, restMins)]);
-    (doc as any).autoTable({ startY: 39, head, body, theme: "grid", styles: { fontSize: 9 }, headStyles: { fillColor: [18, 33, 61] } });
-    doc.save(`${contract.name.replace(/[^a-z0-9]/gi, "_")}-${month.label}.pdf`);
-  };
-
-  const exportExcel = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet(month.label);
-    sheet.addRow([`Contract: ${contract.name}`]);
-    sheet.addRow([`Firm: ${contract.firm}`, `LOA: ${contract.loaNo || "-"}`]);
-    sheet.addRow([`Month: ${month.label}`]);
-    sheet.addRow([`Opening: ${month.previousRemaining}`, `Used: ${used}`, `Remaining: ${remaining}`]);
-    sheet.addRow([]);
-    const head = contract.timeMode === "split"
-      ? ["Date", "Vehicle", "B/N In", "B/N Out", "A/N In", "A/N Out", "Hrs"]
-      : ["Date", "Vehicle", "In Time", "Out Time", "Hrs"];
-    sheet.addRow(head);
-    month.entries.forEach((e: any) => {
-      sheet.addRow(contract.timeMode === "split"
-        ? [e.date, e.vehicle, e.inTime, e.outTime, e.inTime2, e.outTime2, entryNetHours(e, contract.timeMode, restMins)]
-        : [e.date, e.vehicle, e.inTime, e.outTime, entryNetHours(e, contract.timeMode, restMins)]);
-    });
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url;
-    a.download = `${contract.name.replace(/[^a-z0-9]/gi, "_")}-${month.label}.xlsx`;
-    a.click(); URL.revokeObjectURL(url);
-  };
+  const exportPDF = () => exportToPDF(contract, month, used, remaining);
+  const exportExcel = () => exportToExcel(contract, month, used, remaining);
 
   return (
     <div>
+      <div className="print:hidden">
       {/* Month Tabs */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -851,7 +811,20 @@ function EquipmentDetail({ contract, update, notify }: any) {
                       <td className="px-2 py-2"><TimeEditCell value={e.outTime} field="outTime" entryId={e.id} idx={idx} ei={ei} update={update} fillDown={fillDownTime} /></td>
                     </>
                   )}
-                  <td className="px-4 py-2 font-semibold text-gray-700">{entryNetHours(e, contract.timeMode, restMins)}</td>
+                  <td className="px-4 py-2 font-semibold text-gray-700">
+                    <div className="flex items-center gap-2">
+                      <span>{entryNetHours(e, contract.timeMode, restMins)}</span>
+                      {restMins > 0 && (
+                        <button 
+                          onClick={() => update((c: any) => ({ ...c, months: c.months.map((m: any, i: number) => i !== idx ? m : { ...m, entries: m.entries.map((en: any) => en.id === e.id ? { ...en, noRest: !en.noRest } : en) }) }))}
+                          className={`text-[10px] px-1.5 py-0.5 rounded border ${e.noRest ? 'bg-amber-100 text-amber-700 border-amber-200' : 'text-gray-400 border-gray-200 hover:bg-gray-100'}`}
+                          title="Toggle Break Deduction"
+                        >
+                          {e.noRest ? 'No Break' : 'Break'}
+                        </button>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-2 text-right">
                     <div className="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
                       <button onClick={() => cloneEntryBelow(e)} className="text-gray-300 hover:text-blue-500" title="Clone row"><Copy size={13} /></button>
@@ -887,7 +860,18 @@ function EquipmentDetail({ contract, update, notify }: any) {
                   </>
                 )}
                 <td className="px-4 py-2 text-xs text-gray-400">
-                  {entryNetHours(draft, contract.timeMode, restMins) > 0 ? `${entryNetHours(draft, contract.timeMode, restMins)} hr` : "—"}
+                  <div className="flex items-center gap-2">
+                    <span>{entryNetHours(draft, contract.timeMode, restMins) > 0 ? `${entryNetHours(draft, contract.timeMode, restMins)} hr` : "—"}</span>
+                    {restMins > 0 && (
+                      <button 
+                        onClick={() => setDraft(d => ({ ...d, noRest: !d.noRest }))}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border ${draft.noRest ? 'bg-amber-100 text-amber-700 border-amber-200' : 'text-gray-400 border-gray-200 hover:bg-gray-100'}`}
+                        title="Toggle Break Deduction"
+                      >
+                        {draft.noRest ? 'No Break' : 'Break'}
+                      </button>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-2 text-right">
                   <button onClick={addEntry} className="text-blue-600 hover:text-blue-700"><Plus size={16} /></button>
@@ -903,6 +887,12 @@ function EquipmentDetail({ contract, update, notify }: any) {
             </tfoot>
           </table>
         </div>
+      </div>
+      </div>
+      
+      {/* Hidden print template */}
+      <div className="hidden print:block">
+        <PrintTemplate contract={contract} month={month} used={used} remaining={remaining} />
       </div>
     </div>
   );
@@ -1167,6 +1157,7 @@ function ManpowerDetail({ contract, update, notify }: any) {
 
   return (
     <div>
+      <div className="print:hidden">
       {/* Month Tabs */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -1376,6 +1367,12 @@ function ManpowerDetail({ contract, update, notify }: any) {
           notify={notify}
         />
       )}
+      </div>
+      
+      {/* Hidden print template */}
+      <div className="hidden print:block">
+        <PrintTemplate contract={contract} month={month} />
+      </div>
     </div>
   );
 }
@@ -1593,15 +1590,15 @@ export function ContractManager() {
   /* ---- DETAIL VIEW ---- */
   if (openContract) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6 font-sans">
-        <div className="flex items-center justify-between mb-4">
+      <div className="min-h-screen bg-gray-50 p-6 font-sans print:bg-white print:p-0">
+        <div className="flex items-center justify-between mb-4 print:hidden">
           <button onClick={() => setOpenId(null)} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
             <ArrowLeft size={14} /> Back to Contracts
           </button>
           <SyncBadge syncing={syncing} error={syncError} />
         </div>
 
-        <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-6 print:hidden">
           <div>
             <div className="flex items-center gap-2">
               <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${openContract.type === "equipment" ? "bg-blue-50 text-blue-600" : "bg-indigo-50 text-indigo-600"}`}>
