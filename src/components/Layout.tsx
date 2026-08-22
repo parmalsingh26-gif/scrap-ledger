@@ -45,7 +45,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const toggleDesktopSidebar = () => setIsDesktopSidebarOpen(!isDesktopSidebarOpen);
 
   return (
-    <div className="bg-surface text-on-surface font-body-md min-h-screen antialiased flex selection:bg-primary-container selection:text-white overflow-hidden">
+    <div className="bg-surface text-on-surface font-body-md min-h-screen antialiased flex selection:bg-primary-container selection:text-white">
       {/* Background Ambient Gradients */}
       <div className="fixed inset-0 z-[-1] pointer-events-none opacity-40">
         <div className="absolute top-[-10%] left-[-10%] w-1/2 h-1/2 bg-primary-fixed-dim rounded-full blur-[120px]"></div>

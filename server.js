@@ -243,6 +243,25 @@ const BvpMonthlyManualEntrySchema = new mongoose.Schema({
 }, { timestamps: true });
 const BvpMonthlyManualEntry = mongoose.model('BvpMonthlyManualEntry', BvpMonthlyManualEntrySchema);
 
+// ========== Contract Manager Schema ==========
+// Stores full contract tree (contract + months + entries/workers) as flexible BSON
+const ContractSchema = new mongoose.Schema({
+  id: { type: String, unique: true, required: true }, // client-side uid
+  type: { type: String, enum: ['equipment', 'manpower'], required: true },
+  status: { type: String, default: 'active' },
+  name: String,
+  firm: String,
+  loaNo: String,
+  loaDate: String,
+  natureOfWork: String,
+  unit: String,
+  timeMode: String,
+  sanctionedQty: Number,
+  vehicles: [String],
+  months: { type: mongoose.Schema.Types.Mixed, default: [] },
+}, { timestamps: true });
+const Contract = mongoose.model('Contract', ContractSchema);
+
 async function getNextId(model) {
   const last = await model.findOne().sort('-id');
   return last && last.id ? last.id + 1 : 1;
@@ -398,6 +417,85 @@ app.put('/api/bvpCoachEntries/:id', async (req, res) => {
 // ✅ Health check endpoint (ultra-lightweight — no DB call)
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', ts: Date.now() });
+});
+
+// ========== Contract Manager API ==========
+// GET all contracts
+app.get('/api/contracts', async (req, res) => {
+  try {
+    const contracts = await Contract.find({}, '-_id -__v').sort({ createdAt: 1 });
+    res.json(contracts);
+  } catch (err) {
+    console.error('Contracts GET error:', err);
+    res.status(500).json({ error: 'Failed to fetch contracts' });
+  }
+});
+
+// POST create a new contract (or upsert by id)
+app.post('/api/contracts', async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data.id) return res.status(400).json({ error: 'id is required' });
+    const record = await Contract.findOneAndUpdate(
+      { id: data.id },
+      { $set: data },
+      { new: true, upsert: true }
+    );
+    const ret = record.toObject();
+    delete ret._id; delete ret.__v;
+    res.json(ret);
+  } catch (err) {
+    console.error('Contracts POST error:', err);
+    res.status(500).json({ error: 'Failed to save contract' });
+  }
+});
+
+// PUT update one contract
+app.put('/api/contracts/:id', async (req, res) => {
+  try {
+    const record = await Contract.findOneAndUpdate(
+      { id: req.params.id },
+      { $set: req.body },
+      { new: true, upsert: true }
+    );
+    const ret = record.toObject();
+    delete ret._id; delete ret.__v;
+    res.json(ret);
+  } catch (err) {
+    console.error('Contracts PUT error:', err);
+    res.status(500).json({ error: 'Failed to update contract' });
+  }
+});
+
+// DELETE one contract
+app.delete('/api/contracts/:id', async (req, res) => {
+  try {
+    await Contract.findOneAndDelete({ id: req.params.id });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Contracts DELETE error:', err);
+    res.status(500).json({ error: 'Failed to delete contract' });
+  }
+});
+
+// POST batch upsert (merge multiple JSONs without overwriting unrelated contracts)
+app.post('/api/contracts/batch', async (req, res) => {
+  try {
+    const { contracts = [] } = req.body;
+    if (!contracts.length) return res.json({ success: true, count: 0 });
+    const ops = contracts.map(c => ({
+      updateOne: {
+        filter: { id: c.id },
+        update: { $set: c },
+        upsert: true
+      }
+    }));
+    await Contract.bulkWrite(ops, { ordered: false });
+    res.json({ success: true, count: contracts.length });
+  } catch (err) {
+    console.error('Contracts batch error:', err);
+    res.status(500).json({ error: 'Batch upsert failed' });
+  }
 });
 
 // ========== BVP Batch Import (Replace by session) ==========
