@@ -98,8 +98,19 @@ export function StatusBadge({ status }: { status: RowStatus }) {
 
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5001/api';
 
+async function authFetch(url: string, options?: RequestInit) {
+  const token = sessionStorage.getItem('token');
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...options?.headers
+    }
+  });
+}
+
 async function mcrApi(path: string, options?: RequestInit) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await authFetch(`${API_BASE}${path}`, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers }
   });
@@ -859,7 +870,7 @@ async function migrateFromLocalStorage(apiBase: string): Promise<{ totalExtras: 
 
   if (!hasData) return { totalExtras: 0, totalEdits: 0 };
 
-  const res = await fetch(`${apiBase}/mcr/migrate`, {
+  const res = await authFetch(`${apiBase}/mcr/migrate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sections: payload })

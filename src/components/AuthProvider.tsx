@@ -4,7 +4,8 @@ interface AuthContextType {
   isLoggedIn: boolean;
   isAdmin: boolean;
   username: string;
-  loginApp: (username: string, password: string) => boolean;
+  token: string | null;
+  loginApp: (username: string, password: string) => Promise<boolean>;
   logoutApp: () => void;
   login: (pin: string) => boolean;
   logout: () => void;
@@ -25,6 +26,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [username, setUsername] = useState(() => {
     return sessionStorage.getItem('loggedInUser') || '';
   });
+  const [token, setToken] = useState<string | null>(() => {
+    return sessionStorage.getItem('token');
+  });
 
   // Admin PIN state (existing functionality)
   const [isAdmin, setIsAdmin] = useState(() => {
@@ -43,19 +47,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Stored credentials
   const getStoredPassword = () => localStorage.getItem('appPassword') || 'admin123';
 
-  // App login
-  const loginApp = (user: string, pass: string) => {
-    const storedPassword = getStoredPassword();
-    if (user === 'admin' && pass === storedPassword) {
-      setIsLoggedIn(true);
-      setUsername(user);
-      setIsAdmin(true);
-      sessionStorage.setItem('isLoggedIn', 'true');
-      sessionStorage.setItem('loggedInUser', user);
-      sessionStorage.setItem('isAdmin', 'true');
-      return true;
+  // App login (Backend JWT)
+  const loginApp = async (user: string, pass: string): Promise<boolean> => {
+    try {
+      const res = await fetch('http://localhost:5000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsLoggedIn(true);
+        setUsername(data.username);
+        setToken(data.token);
+        setIsAdmin(true); // Treat API logged in users as admins for now
+        sessionStorage.setItem('isLoggedIn', 'true');
+        sessionStorage.setItem('loggedInUser', data.username);
+        sessionStorage.setItem('token', data.token);
+        sessionStorage.setItem('isAdmin', 'true');
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Login error:', err);
+      return false;
     }
-    return false;
   };
 
   // App logout
@@ -63,8 +79,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoggedIn(false);
     setIsAdmin(false);
     setUsername('');
+    setToken(null);
     sessionStorage.removeItem('isLoggedIn');
     sessionStorage.removeItem('loggedInUser');
+    sessionStorage.removeItem('token');
     sessionStorage.removeItem('isAdmin');
   };
 
@@ -121,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{ 
-      isLoggedIn, isAdmin, username,
+      isLoggedIn, isAdmin, username, token,
       loginApp, logoutApp, 
       login, logout, updatePin, changePassword,
       isNotebookUnlocked, unlockNotebook, updateNotebookPin

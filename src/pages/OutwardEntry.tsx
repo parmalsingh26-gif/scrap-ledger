@@ -6,20 +6,32 @@ import { QRScannerModal } from '../components/QRScannerModal';
 import { useNavigate } from 'react-router-dom';
 import { getMcrLots, useMcrLots } from './McrView';
 
-// ── MCR API helper (same proxy as McrView) ────────────────────────────────────
-const MCR_API_BASE = '/api';  // Vite dev proxy + prod both serve /api
+// ── MCR API helper // Utility for API calls inside OutwardEntry (can be replaced by db.ts later)
+const MCR_API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5001/api';
+
+async function authFetch(url: string, options?: RequestInit) {
+  const token = sessionStorage.getItem('token');
+  return fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...options?.headers
+    }
+  });
+}
+
 async function mcrEditSave(section: string, rowId: string, data: Record<string, string>) {
   try {
     // Fetch existing edits to preserve fields (e.g. purchaser, deliveryDate) that were previously edited
-    const res = await fetch(`${MCR_API_BASE}/mcr/${section}/edits`);
+    const res = await authFetch(`${MCR_API_BASE}/mcr/${section}/edits`);
     const allEdits = await res.json();
     const existingEdits = allEdits[rowId] || {};
 
     const mergedData = { ...existingEdits, ...data };
 
-    await fetch(`${MCR_API_BASE}/mcr/${section}/edits`, {
+    await authFetch(`${MCR_API_BASE}/mcr/${section}/edits`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rowId, data: mergedData }),
     });
   } catch (e) {
@@ -29,7 +41,7 @@ async function mcrEditSave(section: string, rowId: string, data: Record<string, 
 
 async function mcrExtraUpdate(section: string, rowId: string, data: Record<string, string>) {
   try {
-    const res = await fetch(`${MCR_API_BASE}/mcr/${section}/extras`);
+    const res = await authFetch(`${MCR_API_BASE}/mcr/${section}/extras`);
     const allExtras = await res.json();
     const existingExtra = allExtras.find((r: any) => r.id === rowId || r.rowId === rowId);
     
@@ -37,9 +49,8 @@ async function mcrExtraUpdate(section: string, rowId: string, data: Record<strin
       const mergedData = { ...existingExtra, ...data };
       delete mergedData._isNew; // clean up client-only flag before saving
 
-      await fetch(`${MCR_API_BASE}/mcr/${section}/extras`, {
+      await authFetch(`${MCR_API_BASE}/mcr/${section}/extras`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rowId, data: mergedData }),
       });
     }

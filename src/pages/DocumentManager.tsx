@@ -27,8 +27,18 @@ interface StorageUsage {
   percentUsed: string;
 }
 
-const API = '';
+const API = import.meta.env.PROD ? '' : 'http://localhost:5001';
 
+async function authFetch(url: string, options?: RequestInit) {
+  const token = sessionStorage.getItem('token');
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...options?.headers
+    }
+  });
+}
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatSize(bytes: number): string {
   if (!bytes) return '—';
@@ -124,7 +134,7 @@ export function DocumentManager() {
   const [uploadingFileName, setUploadingFileName] = useState('');
   const [uploadMode, setUploadMode] = useState<'files' | 'folder'>('files');
   // Cache signed URLs for 50 min (they expire in 1 hour)
-  const signedUrlCache = useRef<Map<string, { url: string; fetchedAt: number }>>(new Map());
+  const signedUrlCache = useRef<Map<string, { url: string; authFetchedAt: number }>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -132,13 +142,13 @@ export function DocumentManager() {
   const getSignedUrl = async (docId: string): Promise<string | null> => {
     const cached = signedUrlCache.current.get(docId);
     const CACHE_MS = 50 * 60 * 1000; // 50 minutes
-    if (cached && Date.now() - cached.fetchedAt < CACHE_MS) {
+    if (cached && Date.now() - cached.authFetchedAt < CACHE_MS) {
       return cached.url;
     }
-    const res = await fetch(`${API}/api/documents/${docId}/signed-url`);
+    const res = await authFetch(`${API}/api/documents/${docId}/signed-url`);
     if (!res.ok) return null;
     const { url } = await res.json();
-    signedUrlCache.current.set(docId, { url, fetchedAt: Date.now() });
+    signedUrlCache.current.set(docId, { url, authFetchedAt: Date.now() });
     return url;
   };
 
@@ -172,21 +182,21 @@ export function DocumentManager() {
 
   // ── Load folders ──────────────────────────────────────────────────────────
   const loadFolders = async () => {
-    const res = await fetch(`${API}/api/folders`);
+    const res = await authFetch(`${API}/api/folders`);
     if (res.ok) setFolders(await res.json());
   };
 
   // ── Load documents ────────────────────────────────────────────────────────
   const loadDocuments = useCallback(async (folder: string) => {
     setLoading(true);
-    const res = await fetch(`${API}/api/documents?folder=${encodeURIComponent(folder)}`);
+    const res = await authFetch(`${API}/api/documents?folder=${encodeURIComponent(folder)}`);
     if (res.ok) setDocuments(await res.json());
     setLoading(false);
   }, []);
 
   // ── Load storage usage ────────────────────────────────────────────────────
   const loadUsage = async () => {
-    const res = await fetch(`${API}/api/cloudinary/usage`);
+    const res = await authFetch(`${API}/api/cloudinary/usage`);
     if (res.ok) setUsage(await res.json());
   };
 
@@ -215,7 +225,7 @@ export function DocumentManager() {
       fd.append('folder', targetFolder);
       fd.append('uploadedBy', 'User');
 
-      const res = await fetch(`${API}/api/documents/upload`, { method: 'POST', body: fd });
+      const res = await authFetch(`${API}/api/documents/upload`, { method: 'POST', body: fd });
       if (res.ok) {
         uploaded++;
         setUploadProgress(Math.round((uploaded / files.length) * 100));
@@ -275,7 +285,7 @@ export function DocumentManager() {
       const fullPath = selectedFolder === 'root' ? relPath : `${selectedFolder}/${relPath}`;
 
       if (!createdFolderPaths.has(fullPath)) {
-        await fetch(`${API}/api/folders`, {
+        await authFetch(`${API}/api/folders`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, parent: parentFullPath })
@@ -301,7 +311,7 @@ export function DocumentManager() {
       fd.append('folder', targetFolder);
       fd.append('uploadedBy', 'User');
 
-      const res = await fetch(`${API}/api/documents/upload`, { method: 'POST', body: fd });
+      const res = await authFetch(`${API}/api/documents/upload`, { method: 'POST', body: fd });
       if (res.ok) {
         uploaded++;
         setUploadProgress(Math.round((uploaded / fileArray.length) * 100));
@@ -330,7 +340,7 @@ export function DocumentManager() {
 
   // ── Delete document ───────────────────────────────────────────────────────
   const handleDeleteDoc = async (id: string) => {
-    const res = await fetch(`${API}/api/documents/${id}`, { method: 'DELETE' });
+    const res = await authFetch(`${API}/api/documents/${id}`, { method: 'DELETE' });
     if (res.ok) {
       showToast('File delete ho gayi!');
       setDocuments(prev => prev.filter(d => d._id !== id));
@@ -343,7 +353,7 @@ export function DocumentManager() {
 
   // ── Delete folder ─────────────────────────────────────────────────────────
   const handleDeleteFolder = async (folder: Folder) => {
-    const res = await fetch(`${API}/api/folders/${folder._id}`, { method: 'DELETE' });
+    const res = await authFetch(`${API}/api/folders/${folder._id}`, { method: 'DELETE' });
     const data = await res.json();
     if (res.ok) {
       showToast(`Folder "${folder.name}" delete ho gaya!`);
@@ -357,7 +367,7 @@ export function DocumentManager() {
   // ── Create folder ─────────────────────────────────────────────────────────
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
-    const res = await fetch(`${API}/api/folders`, {
+    const res = await authFetch(`${API}/api/folders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newFolderName.trim(), parent: selectedFolder })

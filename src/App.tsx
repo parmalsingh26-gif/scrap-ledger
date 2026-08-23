@@ -21,6 +21,7 @@ import { DocumentManager } from './pages/DocumentManager';
 import { McrView } from './pages/McrView';
 import { AttendanceTimesheet } from './pages/AttendanceTimesheet';
 import { ContractManager } from './pages/ContractManager';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function AppContent() {
   const { isLoggedIn } = useAuth();
@@ -56,7 +57,9 @@ export default function App() {
   return (
     <AuthProvider>
       <SyncStatus />
-      <AppContent />
+      <ErrorBoundary>
+        <AppContent />
+      </ErrorBoundary>
     </AuthProvider>
   );
 }

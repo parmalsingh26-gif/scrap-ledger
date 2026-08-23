@@ -342,8 +342,10 @@ export function LoginPage() {
     setIsLoading(true);
 
     await new Promise(resolve => setTimeout(resolve, 900));
+    
+    const success = await loginApp(username, password);
 
-    if (loginApp(username, password)) {
+    if (success) {
       setSuccessAnim(true);
       await new Promise(resolve => setTimeout(resolve, 700));
     } else {

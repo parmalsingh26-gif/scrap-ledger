@@ -28,6 +28,18 @@ function buildDays(y: number, m: number): Day[] {
   return Array.from({length: n}, (_,i) => ({num: i+1, isSunday: new Date(y,m,i+1).getDay()===0}));
 }
 
+async function authFetch(url: string, options?: RequestInit) {
+  const token = sessionStorage.getItem('token');
+  return fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...options?.headers
+    }
+  });
+}
+
 function getAutoFillUpTo(y: number, m: number, numDays: number): number {
   const now = new Date();
   if (y < now.getFullYear() || (y===now.getFullYear() && m<now.getMonth())) return numDays-1;
@@ -240,7 +252,7 @@ export function AttendanceTimesheet() {
       const prevM = m === 0 ? 11 : m - 1;
       const prevY = m === 0 ? y - 1 : y;
       try {
-        const prevSaved = await fetch(`/api/attendance/${prevY}/${prevM}`).then(r => {
+        const prevSaved = await authFetch(`/api/attendance/${prevY}/${prevM}`).then(r => {
           if (!r.ok) return [];
           return r.json();
         });
@@ -274,7 +286,7 @@ export function AttendanceTimesheet() {
       emps.some(e => e.status.some(s => s !== '' && s !== 'SUNDAY'));
 
     try {
-      const saved: Employee[] = forceSeed ? [] : await fetch(`/api/attendance/${y}/${m}`).then(r=>r.json());
+      const saved: Employee[] = forceSeed ? [] : await authFetch(`/api/attendance/${y}/${m}`).then(r=>r.json());
       if(Array.isArray(saved) && saved.length>0 && hasRealStatus(saved)) {
         // Month has actual user-entered data — use it
         const monthKey = `${MONTHS[m]} ${y}`;
@@ -325,9 +337,9 @@ export function AttendanceTimesheet() {
     saveTimer.current = setTimeout(async()=>{
       setSaving(true);
       try {
-        const r = await fetch(`/api/attendance/${year}/${month}`,{
-          method:'PUT', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({employees}),
+        const r = await authFetch(`/api/attendance/${year}/${month}`,{
+          method:'PUT',
+          body: JSON.stringify({ employees }),
         });
         if(!r.ok) throw new Error();
       } catch { setSaveErr('Auto-save failed.'); }
