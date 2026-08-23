@@ -50,7 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // App login (Backend JWT)
   const loginApp = async (user: string, pass: string): Promise<boolean> => {
     try {
-      const res = await fetch('http://localhost:5000/api/auth/login', {
+      const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5001/api';
+      const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: user, password: pass })
