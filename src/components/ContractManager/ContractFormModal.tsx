@@ -17,8 +17,8 @@ export function ContractFormModal({ initial, onClose, onSave }: any) {
 
   return (
     <Portal>
-      <div className="fixed inset-0 bg-gray-900/50 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="fixed z-50 flex items-center justify-center p-4" style={{ top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(17, 24, 39, 0.5)' }}>
+        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ width: '100%', maxWidth: '450px', maxHeight: '90vh' }}>
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
             <h3 className="font-bold text-gray-800">{initial ? "Edit Contract" : "New Contract"}</h3>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>

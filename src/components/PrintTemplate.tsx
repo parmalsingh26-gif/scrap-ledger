@@ -31,6 +31,7 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
   if (isManpower) {
     return (
       <div className="hidden print:block w-full text-black bg-white" style={{ fontFamily: 'sans-serif' }}>
+        <style>{"@page { size: landscape; margin: 10mm; }"}</style>
         <div className="border border-black p-2 mb-2">
           <div className="text-center mb-4">
             <h1 className="font-bold text-sm uppercase">FORM-D</h1>
@@ -41,10 +42,10 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
           <div className="flex justify-between items-center text-xs font-bold mb-1 px-1">
             <div>Name of Establishment : {contract.firm}</div>
             <div>Name of Owner : {contract.firm}</div>
-            <div>LIN : </div>
+            <div>LOA No. : {contract.loaNo || "-"}</div>
           </div>
           <div className="flex text-xs font-bold px-1 mb-2">
-            <div>For the Period from {month.label} to {month.label}</div>
+            <div>For the Period from {month.monthIdx !== undefined ? `01/${(month.monthIdx + 1).toString().padStart(2, '0')}/${month.year}` : month.label} to {month.monthIdx !== undefined ? `${month.totalDays}/${(month.monthIdx + 1).toString().padStart(2, '0')}/${month.year}` : month.label}</div>
           </div>
 
           <table className="w-full border-collapse border border-black text-[10px] text-center">
@@ -85,12 +86,23 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
                       <td className="border border-black p-1 font-bold text-center" rowSpan={2}>{idx + 1}</td>
                       <td className="border border-black p-1 font-bold text-left px-2" rowSpan={2}>{w.name}</td>
                       <td className="border border-black p-1 text-center" rowSpan={2}></td>
-                      <td className="border border-black p-1 text-center" rowSpan={2}>{contract.name}</td>
+                      <td className="border border-black p-1 text-center" rowSpan={2}>{w.section || contract.name}</td>
                       <td className="border border-black p-0.5 font-bold text-center text-[8px]">IN</td>
                       {Array.from({ length: 31 }, (_, i) => {
                         const d = i + 1;
                         const isOff = month.sundays?.includes(d) || month.holidays?.includes(d);
-                        let val = isOff ? (month.sundays?.includes(d) ? "S" : "H") : (w.attendance?.[d] || "");
+                        
+                        if (isOff) {
+                          const text = month.sundays?.includes(d) ? "SUNDAY   " : "HOLIDAY   ";
+                          const letter = text[idx % text.length];
+                          return (
+                            <td key={`in-${i}`} className="border border-black p-1 text-center text-[10px] font-bold text-gray-600 bg-gray-100">
+                              {letter}
+                            </td>
+                          );
+                        }
+                        
+                        let val = w.attendance?.[d] || "";
                         if (val === "SUNDAY") val = "S";
                         if (val === "HOLIDAY") val = "H";
                         const isSpecial = val === "S" || val === "H";
@@ -102,9 +114,12 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
                     </tr>
                     <tr>
                       <td className="border border-black p-0.5 font-bold text-center text-[8px]">OUT</td>
-                      {Array.from({ length: 31 }, (_, i) => (
-                        <td key={`out-${i}`} className="border border-black p-0.5 text-center text-[9px]"></td>
-                      ))}
+                      {Array.from({ length: 31 }, (_, i) => {
+                        const d = i + 1;
+                        const isOff = month.sundays?.includes(d) || month.holidays?.includes(d);
+                        if (isOff) return <td key={`out-${i}`} className="border border-black p-0.5 text-center text-[9px] bg-gray-100"></td>;
+                        return <td key={`out-${i}`} className="border border-black p-0.5 text-center text-[9px]"></td>;
+                      })}
                     </tr>
                   </React.Fragment>
                 );
@@ -133,6 +148,7 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
   // Equipment (JCB / Tractor)
   return (
     <div className="hidden print:block w-full text-black bg-white" style={{ fontFamily: 'sans-serif' }}>
+      <style>{"@page { margin: 10mm; }"}</style>
       <table className="w-full text-[11px] border-collapse border border-black mb-3">
         <tbody>
           <tr><td className="border border-black py-1 px-2 font-semibold bg-gray-100" colSpan={isSplit ? 11 : 8}>LOA No.: {contract.loaNo || "-"} ({contract.loaDate || "-"})</td></tr>

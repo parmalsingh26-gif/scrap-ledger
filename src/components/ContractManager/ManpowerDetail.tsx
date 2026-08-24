@@ -397,6 +397,7 @@ export function ManpowerDetail({ contract, update, notify }: any) {
                     className="rounded" />
                 </th>
                 <th className="px-3 py-2 text-left sticky left-6 bg-gray-50 min-w-[160px]">Name</th>
+                <th className="px-2 py-2 text-left bg-gray-50 w-20">Section</th>
                 {Array.from({ length: month.totalDays }, (_, i) => i + 1).map((d) => (
                   <th key={d} className="w-7 p-0 font-medium text-center">
                     <div className="relative flex items-center justify-center">
@@ -444,6 +445,16 @@ export function ManpowerDetail({ contract, update, notify }: any) {
                         className="font-medium text-gray-700 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-400 focus:outline-none text-xs w-40 uppercase" />
                     </div>
                   </td>
+                  <td className="px-2 py-1.5 bg-inherit">
+                    <input value={w.section || ""}
+                      onChange={e => update((c: any) => ({
+                        ...c, months: c.months.map((m: any, i: number) => i !== idx ? m : {
+                          ...m, workers: m.workers.map((ww: any) => ww.id === w.id ? { ...ww, section: e.target.value.toUpperCase() } : ww)
+                        })
+                      }))}
+                      placeholder="SECTION"
+                      className="font-medium text-gray-500 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-indigo-400 focus:outline-none text-[10px] w-16 uppercase" />
+                  </td>
                   {Array.from({ length: month.totalDays }, (_, i) => i + 1).map((d) => {
                     const isOff = month.sundays?.includes(d) || month.holidays?.includes(d);
                     const val = isOff ? (month.sundays?.includes(d) ? "SUNDAY" : "HOLIDAY") : (w.attendance[d] || "");
@@ -480,7 +491,7 @@ export function ManpowerDetail({ contract, update, notify }: any) {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-gray-100 bg-gray-50 font-semibold text-gray-600">
-                <td colSpan={2} className="px-3 py-2 sticky left-0 bg-gray-50">TOTAL / day</td>
+                <td colSpan={3} className="px-3 py-2 sticky left-0 bg-gray-50">TOTAL / day</td>
                 {Array.from({ length: month.totalDays }, (_, i) => i + 1).map((d) => (
                   <td key={d} className="text-center py-1.5">
                     <button onClick={() => fillDayAll(d, "P")} title={`Fill P for day ${d}`}
