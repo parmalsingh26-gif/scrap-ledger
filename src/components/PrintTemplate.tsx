@@ -29,6 +29,19 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
   };
 
   if (isManpower) {
+    // Calculate per-day present totals for the TOTAL/day print row
+    const perDay: Record<number, number> = {};
+    for (let d = 1; d <= 31; d++) {
+      const isOff = month.sundays?.includes(d) || month.holidays?.includes(d);
+      if (isOff) { perDay[d] = 0; continue; }
+      perDay[d] = (month.workers || []).reduce(
+        (s: number, w: any) => s + (((w.attendance || {})[d] || "").toUpperCase() === "P" ? 1 : 0), 0
+      );
+    }
+    const totalPresent = (month.workers || []).reduce(
+      (s: number, w: any) => s + Object.values(w.attendance || {}).filter((v: any) => (v || "").toUpperCase() === "P").length, 0
+    );
+
     return (
       <div className="hidden print:block w-full text-black bg-white" style={{ fontFamily: 'sans-serif' }}>
         <style>{"@page { size: landscape; margin: 10mm; }"}</style>
@@ -129,6 +142,24 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
                   <td colSpan={40} className="border border-black p-4 text-center text-gray-500">No workers found for this month</td>
                 </tr>
               )}
+
+              {/* ── TOTAL / day row ── shows per-day present count in each date box */}
+              <tr className="font-bold bg-gray-50 text-[9px]">
+                <td className="border border-black p-1 text-center font-bold" colSpan={4} style={{ fontSize: '8px' }}>TOTAL / day</td>
+                <td className="border border-black p-0.5"></td>
+                {Array.from({ length: 31 }, (_, i) => {
+                  const d = i + 1;
+                  const isOff = month.sundays?.includes(d) || month.holidays?.includes(d);
+                  return (
+                    <td key={d} className={`border border-black p-0.5 text-center font-bold ${isOff ? 'bg-gray-100 text-gray-400' : 'text-black'}`}>
+                      {isOff ? "" : (perDay[d] || "")}
+                    </td>
+                  );
+                })}
+                <td className="border border-black p-1 font-bold text-center">{totalPresent}</td>
+                <td className="border border-black p-1"></td>
+                <td className="border border-black p-1"></td>
+              </tr>
             </tbody>
           </table>
           
