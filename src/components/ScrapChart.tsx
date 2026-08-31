@@ -118,8 +118,8 @@ export function ScrapChart() {
         </div>
       </div>
 
-      <div className="h-64 w-full relative z-10">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="w-full relative z-10">
+        <ResponsiveContainer width="100%" height={256}>
           <LineChart data={data} margin={{ top: 5, right: 20, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" opacity={0.5} />
             <XAxis

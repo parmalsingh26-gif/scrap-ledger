@@ -22,8 +22,15 @@ interface AnyRow {
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5001/api';
 
 async function mcrApi(path: string) {
-  const res = await fetch(`${API_BASE}${path}`);
-  if (!res.ok) throw new Error(`API error`);
+  const token = sessionStorage.getItem('token');
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+  });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('Non-JSON response received');
+  }
   return res.json();
 }
 

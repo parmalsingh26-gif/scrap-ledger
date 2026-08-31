@@ -48,7 +48,7 @@ export function recalcManpowerMonth(month: any) {
   for (let d = 1; d <= month.totalDays; d++) {
     if (month.sundays?.includes(d) || month.holidays?.includes(d)) { perDay[d] = 0; continue; }
     perDay[d] = month.workers.reduce(
-      (s: number, w: any) => s + ((w.attendance[d] || "").toUpperCase() === "P" ? 1 : 0), 0
+      (s: number, w: any) => s + (((w.attendance || {})[d] || "").toUpperCase() === "P" ? 1 : 0), 0
     );
   }
   const totalPresent = month.workers.reduce((s: number, w: any) => s + attendanceCount(w, "P"), 0);

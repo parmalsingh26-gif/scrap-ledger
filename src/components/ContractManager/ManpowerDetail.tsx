@@ -68,9 +68,9 @@ export function ManpowerDetail({ contract, update, notify }: any) {
         ...m,
         workers: m.workers.map((w: any) => {
           if (w.id !== workerId) return w;
-          const cur = (w.attendance[day] || "").toUpperCase();
+          const cur = ((w.attendance || {})[day] || "").toUpperCase();
           const next = cycleOrder[(cycleOrder.indexOf(cur) + 1) % cycleOrder.length];
-          return { ...w, attendance: { ...w.attendance, [day]: next } };
+          return { ...w, attendance: { ...(w.attendance || {}), [day]: next } };
         }),
       }),
     }));
@@ -457,7 +457,7 @@ export function ManpowerDetail({ contract, update, notify }: any) {
                   </td>
                   {Array.from({ length: month.totalDays }, (_, i) => i + 1).map((d) => {
                     const isOff = month.sundays?.includes(d) || month.holidays?.includes(d);
-                    const val = isOff ? (month.sundays?.includes(d) ? "SUNDAY" : "HOLIDAY") : (w.attendance[d] || "");
+                    const val = isOff ? (month.sundays?.includes(d) ? "SUNDAY" : "HOLIDAY") : ((w.attendance || {})[d] || "");
                     const isHovered = hoveredCell?.workerId === w.id && hoveredCell?.day === d;
                     return (
                       <td key={d} className="p-0.5">
