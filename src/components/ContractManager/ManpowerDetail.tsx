@@ -243,6 +243,36 @@ export function ManpowerDetail({ contract, update, notify }: any) {
     notify(`${newMonth.label} added — worker list carried over`);
   };
 
+  const deleteMonth = (i: number) => {
+    if (contract.months.length <= 1) { notify("Kam se kam ek month hona chahiye", "error"); return; }
+    if (!window.confirm(`"${contract.months[i]?.label}" month delete karo?`)) return;
+    update((c: any) => {
+      const newMonths = c.months.filter((_: any, mi: number) => mi !== i);
+      return { ...c, months: newMonths };
+    });
+    setSelIdx(prev => Math.min(prev, contract.months.length - 2));
+    notify("Month delete ho gaya");
+  };
+
+  const copySectionsFromPrev = () => {
+    if (idx === 0) { notify("Pehle month ke liye koi previous month nahi hai", "error"); return; }
+    const prevWorkers = contract.months[idx - 1]?.workers || [];
+    update((c: any) => ({
+      ...c,
+      months: c.months.map((m: any, i: number) => {
+        if (i !== idx) return m;
+        return {
+          ...m,
+          workers: m.workers.map((w: any) => {
+            const prev = prevWorkers.find((pw: any) => pw.name === w.name);
+            return prev?.section ? { ...w, section: prev.section } : w;
+          }),
+        };
+      }),
+    }));
+    notify("Previous month se sections copy ho gaye ✓");
+  };
+
   const handleWorkerImport = (workers: any[], mode: string) => {
     if (mode !== "workers") { notify("Yeh attendance workers import ke liye hai", "error"); return; }
     update((c: any) => ({
@@ -280,10 +310,15 @@ export function ManpowerDetail({ contract, update, notify }: any) {
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           {contract.months.map((m: any, i: number) => (
-            <button key={m.id ?? i} onClick={() => setSelIdx(i)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${i === idx ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
-              {m.label}
-            </button>
+            <div key={m.id ?? i} className={`flex items-center gap-0.5 rounded-lg text-sm font-medium whitespace-nowrap ${i === idx ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-500"}`}>
+              <button onClick={() => setSelIdx(i)} className="px-3 py-1.5">{m.label}</button>
+              <button
+                onClick={(e) => { e.stopPropagation(); deleteMonth(i); }}
+                title="Is month ko delete karo"
+                className={`pr-2 py-1.5 hover:text-rose-300 transition-colors text-xs leading-none ${i === idx ? 'text-indigo-200' : 'text-gray-400 hover:text-rose-500'}`}>
+                ×
+              </button>
+            </div>
           ))}
           <button onClick={addMonth} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-dashed border-gray-300 text-gray-500 hover:border-indigo-400 hover:text-indigo-600 flex items-center gap-1">
             <Plus size={14} /> Month
@@ -364,6 +399,15 @@ export function ManpowerDetail({ contract, update, notify }: any) {
               <button onClick={() => fillSelected("P")} className="text-xs px-2 py-1 bg-emerald-100 text-emerald-700 rounded-lg">P</button>
               <button onClick={() => fillSelected("A")} className="text-xs px-2 py-1 bg-rose-100 text-rose-700 rounded-lg">A</button>
               <button onClick={() => setSelectedWorkers(new Set())} className="text-xs text-gray-400 hover:text-gray-600"><X size={11} /></button>
+            </div>
+          )}
+          {idx > 0 && (
+            <div className="flex items-center gap-1.5 border-r border-indigo-100 pr-3">
+              <button onClick={copySectionsFromPrev}
+                className="text-xs px-2 py-1 bg-violet-100 text-violet-700 rounded-lg hover:bg-violet-200 font-semibold flex items-center gap-1"
+                title="Previous month ke workers ka Section copy karo is month mein">
+                ⬆ Copy Sections from Prev Month
+              </button>
             </div>
           )}
           <div className="flex items-center gap-1.5">
