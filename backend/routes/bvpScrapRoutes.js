@@ -15,7 +15,7 @@ router.put('/bvpMonthlyManualEntries/:id', async (req, res) => {
     const record = await BvpMonthlyManualEntry.findOneAndUpdate(
       { id: req.params.id },
       { $set: { ...req.body, updatedAt: Date.now() } },
-      { new: true, upsert: true }
+      { returnDocument: 'after', upsert: true }
     );
     const ret = record.toObject();
     delete ret._id; delete ret.__v;
@@ -31,7 +31,7 @@ router.put('/bvpCoachEntries/:id', async (req, res) => {
     const record = await BvpCoachEntry.findOneAndUpdate(
       { id: req.params.id },
       { $set: { ...req.body, updatedAt: Date.now() } },
-      { new: true, upsert: true }
+      { returnDocument: 'after', upsert: true }
     );
     if (!record) return res.status(404).json({ error: 'Entry not found' });
     const ret = record.toObject();
@@ -48,7 +48,7 @@ router.put('/bvpScrapEntries/:id', async (req, res) => {
     const record = await BvpScrapEntry.findOneAndUpdate(
       { id: req.params.id },
       { $set: { ...req.body, updatedAt: Date.now() } },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!record) return res.status(404).json({ error: 'Entry not found' });
     const ret = record.toObject();

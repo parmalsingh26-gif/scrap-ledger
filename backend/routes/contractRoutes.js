@@ -20,7 +20,7 @@ router.post('/', async (req, res) => {
     const record = await Contract.findOneAndUpdate(
       { id: data.id },
       { $set: data },
-      { new: true, upsert: true }
+      { returnDocument: 'after', upsert: true }
     );
     const ret = record.toObject();
     delete ret._id; delete ret.__v;
@@ -36,7 +36,7 @@ router.put('/:id', async (req, res) => {
     const record = await Contract.findOneAndUpdate(
       { id: req.params.id },
       { $set: req.body },
-      { new: true, upsert: true }
+      { returnDocument: 'after', upsert: true }
     );
     const ret = record.toObject();
     delete ret._id; delete ret.__v;

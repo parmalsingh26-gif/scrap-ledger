@@ -83,7 +83,7 @@ export function makeBvpApi(model) {
       const record = await model.findOneAndUpdate(
         { id: data.id },
         data,
-        { new: true, upsert: true }
+        { returnDocument: 'after', upsert: true }
       );
       const ret = record.toObject();
       delete ret._id;
