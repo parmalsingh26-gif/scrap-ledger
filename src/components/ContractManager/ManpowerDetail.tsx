@@ -236,7 +236,7 @@ export function ManpowerDetail({ contract, update, notify }: any) {
     const newMonth = {
       id: uid(), label: `${MONTH_NAMES[mIdx]} ${year}`, year, monthIdx: mIdx,
       totalDays: daysInMonth(year, mIdx), sundays: [], holidays: [],
-      workers: last ? last.workers.map((w: any) => ({ id: uid(), srNo: w.srNo, name: w.name, attendance: {} })) : [],
+      workers: last ? last.workers.map((w: any) => ({ id: uid(), srNo: w.srNo, name: w.name, section: w.section || '', attendance: {} })) : [],
     };
     update((c: any) => ({ ...c, months: [...c.months, newMonth] }));
     setSelIdx(contract.months.length);
