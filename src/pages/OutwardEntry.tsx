@@ -389,8 +389,12 @@ export function OutwardEntry() {
       // (sirf blank fields — jo already bhara hai wo override nahi hoga)
       if (selectedMcrLot) {
         const mcrUpdates: Record<string, string> = {};
-        if (!selectedMcrLot.deliveryDate && dateDelivered)
-          mcrUpdates.deliveryDate = isoToMcrDate(dateDelivered);
+        
+        // MCR Delivery Date: push ALL dates comma separated
+        const mcrDatesStr = deliveries.filter(d => d.date).map(d => isoToMcrDate(d.date)).join(', ');
+        if (!selectedMcrLot.deliveryDate && mcrDatesStr)
+          mcrUpdates.deliveryDate = mcrDatesStr;
+          
         if (!selectedMcrLot.purchaser && firmName)
           mcrUpdates.purchaser = firmName;
         if (!selectedMcrLot.lotNo && lotNumber)

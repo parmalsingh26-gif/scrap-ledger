@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import mcrData from '../../Material_Condemnation_Report.json';
 import { getStatus, RowStatus, StatusBadge } from '../pages/McrView';
+import { db, useLiveQuery } from '../db/db';
 
 // Need the row types here as well
 interface AnyRow {
@@ -38,6 +39,7 @@ export function McrSummary() {
   const [loading, setLoading] = useState(true);
   const [activeSubTab, setActiveSubTab] = useState(1);
   const [cloudData, setCloudData] = useState<{ extras: any[], edits: Record<string, any> }>({ extras: [], edits: {} });
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     async function loadAllData() {
@@ -63,7 +65,7 @@ export function McrSummary() {
       }
     }
     loadAllData();
-  }, []);
+  }, [refreshKey]);
 
   const allRows = useMemo(() => {
     const lotBase = (mcrData.lotMaterialPosition as any[]).map(r => ({ ...r, section: 'lot' }));
@@ -90,6 +92,7 @@ export function McrSummary() {
     { id: 6, label: 'Sections', icon: 'pie_chart' },
     { id: 7, label: 'Date Report', icon: 'date_range' },
     { id: 8, label: 'Timeline', icon: 'schedule' },
+    { id: 9, label: 'Sync Check', icon: 'sync_problem' },
   ];
 
   if (loading) return <div className="flex justify-center p-20 text-primary"><span className="material-symbols-outlined animate-spin text-[32px]">progress_activity</span></div>;
@@ -110,6 +113,9 @@ export function McrSummary() {
           ))}
         </div>
         <div className="flex gap-2 pb-2">
+          <button onClick={() => setRefreshKey(k => k + 1)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold hover:bg-indigo-100 hover:-translate-y-0.5 hover:shadow-sm transition-all whitespace-nowrap shadow-sm">
+            <span className="material-symbols-outlined text-[16px]">refresh</span>Refresh
+          </button>
           <button onClick={() => import('../utils/exportMcr').then(m => m.exportMcrToExcel(allRows))} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 hover:-translate-y-0.5 hover:shadow-sm transition-all whitespace-nowrap shadow-sm">
             <span className="material-symbols-outlined text-[16px]">table_chart</span>Export Excel
           </button>
@@ -120,7 +126,7 @@ export function McrSummary() {
       </div>
 
       <div className="bg-white/50 border border-outline-variant/30 rounded-2xl p-4 shadow-sm min-h-[500px]">
-        {activeSubTab === 1 && <OverviewView rows={allRows} />}
+        {activeSubTab === 1 && <OverviewView rows={allRows} onNavigate={setActiveSubTab} />}
         {activeSubTab === 2 && <LotWiseView rows={allRows} />}
         {activeSubTab === 3 && <MonthWiseView rows={allRows} />}
         {activeSubTab === 4 && <PurchaserView rows={allRows} />}
@@ -128,13 +134,14 @@ export function McrSummary() {
         {activeSubTab === 6 && <SectionView rows={allRows} />}
         {activeSubTab === 7 && <DateReportView rows={allRows} />}
         {activeSubTab === 8 && <TimelineView rows={allRows} />}
+        {activeSubTab === 9 && <SyncCheckView rows={allRows} />}
       </div>
     </div>
   );
 }
 
 // 1. Overview Dashboard
-function OverviewView({ rows }: { rows: AnyRow[] }) {
+function OverviewView({ rows, onNavigate }: { rows: AnyRow[], onNavigate: (tab: number) => void }) {
   const total = rows.length;
   const delivered = rows.filter(r => r.status === 'delivered').length;
   const pending = rows.filter(r => r.status === 'pending').length;
@@ -161,7 +168,7 @@ function OverviewView({ rows }: { rows: AnyRow[] }) {
           { label: 'Pending', val: pending, color: 'text-amber-600' },
           { label: 'Cancelled', val: cancelled, color: 'text-red-600' },
         ].map(s => (
-          <div key={s.label} className="bg-surface-container rounded-xl p-4 text-center border border-outline-variant/20 shadow-sm">
+          <div key={s.label} onClick={() => onNavigate(2)} className="bg-surface-container rounded-xl p-4 text-center border border-outline-variant/20 shadow-sm cursor-pointer hover:border-primary/50 hover:bg-surface-variant transition-colors">
             <div className={`text-3xl font-extrabold font-data-mono ${s.color}`}>{s.val}</div>
             <div className="text-xs font-bold text-outline mt-1 uppercase tracking-wider">{s.label}</div>
           </div>
@@ -556,6 +563,126 @@ function TimelineView({ rows }: { rows: AnyRow[] }) {
       <SectionList title="Critical (>180 Days)" lots={critical} colorClass="border-red-200 text-red-800" icon="error" />
       <SectionList title="Warning (>90 Days)" lots={warning} colorClass="border-amber-200 text-amber-800" icon="warning" />
       <SectionList title="Normal (<=90 Days)" lots={normal} colorClass="border-blue-200 text-blue-800" icon="info" />
+    </div>
+  );
+}
+
+// 9. Sync Check 
+function SyncCheckView({ rows }: { rows: AnyRow[] }) {
+  const outwardEntries = useLiveQuery(() => db.outwardEntries.toArray()) || [];
+  
+  const report = useMemo(() => {
+    const matchedMcr: AnyRow[] = [];
+    const unmatchedPendingMcr: AnyRow[] = [];
+    const orphanedOutward: typeof outwardEntries = [];
+
+    const mcrByLot = new Map<string, AnyRow[]>();
+    rows.forEach(r => {
+      const lot = (r.lotNo || '').trim().toUpperCase();
+      if (lot) {
+        if (!mcrByLot.has(lot)) mcrByLot.set(lot, []);
+        mcrByLot.get(lot)!.push(r);
+      }
+    });
+
+    const outwardLots = new Set<string>();
+    
+    outwardEntries.forEach(out => {
+      const outLot = (out.lotNumber || '').trim().toUpperCase();
+      outwardLots.add(outLot);
+      if (!mcrByLot.has(outLot)) {
+        orphanedOutward.push(out);
+      }
+    });
+
+    rows.forEach(r => {
+      const lot = (r.lotNo || '').trim().toUpperCase();
+      if (lot && outwardLots.has(lot)) {
+        matchedMcr.push(r);
+      } else if (r.status === 'pending') {
+        unmatchedPendingMcr.push(r);
+      }
+    });
+
+    return { matchedMcr, unmatchedPendingMcr, orphanedOutward };
+  }, [rows, outwardEntries]);
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-start gap-3">
+        <span className="material-symbols-outlined text-indigo-500 text-[24px]">sync_problem</span>
+        <div>
+          <h3 className="font-bold text-indigo-900 text-sm">MCR vs Outward Sync Report</h3>
+          <p className="text-xs text-indigo-700 mt-1">
+            Yeh report check karti hai ki aapke local outward entries MCR se match ho rahi hain ya nahi.
+            <strong> Note:</strong> Yeh sirf Lot Number ke base pe match karta hai.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 shadow-sm">
+          <h4 className="font-bold text-emerald-800 text-sm mb-1">✅ Synced MCR Lots</h4>
+          <div className="text-2xl font-black font-data-mono text-emerald-600 mb-2">{report.matchedMcr.length}</div>
+          <p className="text-[10px] text-emerald-700">MCR entries jo outward mein found hain</p>
+        </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+          <h4 className="font-bold text-amber-800 text-sm mb-1">⚠️ Unmatched Pending MCR</h4>
+          <div className="text-2xl font-black font-data-mono text-amber-600 mb-2">{report.unmatchedPendingMcr.length}</div>
+          <p className="text-[10px] text-amber-700">Pending hain, par outward entry nahi mili</p>
+        </div>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm">
+          <h4 className="font-bold text-red-800 text-sm mb-1">🔴 Orphaned Outward Entries</h4>
+          <div className="text-2xl font-black font-data-mono text-red-600 mb-2">{report.orphanedOutward.length}</div>
+          <p className="text-[10px] text-red-700">Outward hai, par MCR mein lot number nahi mila</p>
+        </div>
+      </div>
+
+      {report.unmatchedPendingMcr.length > 0 && (
+        <div className="border border-amber-200 rounded-xl shadow-sm bg-white overflow-hidden">
+          <div className="bg-amber-50 px-4 py-3 border-b border-amber-200 font-bold text-amber-900 text-sm flex justify-between items-center">
+            <span>⚠️ Unmatched Pending MCR Lots ({report.unmatchedPendingMcr.length})</span>
+          </div>
+          <div className="max-h-64 overflow-y-auto p-2 space-y-2">
+            {report.unmatchedPendingMcr.slice(0, 50).map(r => (
+              <div key={r.id} className="text-xs flex justify-between items-center p-2 hover:bg-black/5 rounded bg-surface-container">
+                <div>
+                  <span className="font-bold font-mono text-amber-700">{r.lotNo || r.material?.substring(0,20)}</span>
+                  <span className="ml-2 text-outline">{r.eAuctionDate}</span>
+                </div>
+                <div className="text-right">
+                  <span className="font-bold text-primary">{r.qty} {r.unit}</span>
+                  <div className="uppercase text-[9px] font-bold text-outline mt-0.5">{r.section}</div>
+                </div>
+              </div>
+            ))}
+            {report.unmatchedPendingMcr.length > 50 && <div className="text-center text-xs p-2 text-outline">Showing first 50...</div>}
+          </div>
+        </div>
+      )}
+
+      {report.orphanedOutward.length > 0 && (
+        <div className="border border-red-200 rounded-xl shadow-sm bg-white overflow-hidden">
+          <div className="bg-red-50 px-4 py-3 border-b border-red-200 font-bold text-red-900 text-sm flex justify-between items-center">
+            <span>🔴 Orphaned Outward Entries ({report.orphanedOutward.length})</span>
+          </div>
+          <div className="max-h-64 overflow-y-auto p-2 space-y-2">
+            {report.orphanedOutward.slice(0, 50).map((r: any) => (
+              <div key={r.id} className="text-xs flex justify-between items-center p-2 hover:bg-black/5 rounded bg-surface-container">
+                <div>
+                  <span className="font-bold font-mono text-red-700">{r.lotNumber}</span>
+                  <span className="ml-2 text-outline">{r.dateSold}</span>
+                </div>
+                <div className="text-right">
+                  <span className="font-bold text-primary">{r.quantity}</span>
+                  <div className="text-[9px] font-bold text-outline mt-0.5">{r.firmName}</div>
+                </div>
+              </div>
+            ))}
+             {report.orphanedOutward.length > 50 && <div className="text-center text-xs p-2 text-outline">Showing first 50...</div>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

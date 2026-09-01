@@ -2,6 +2,64 @@ import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { db, useLiveQuery, type OutwardEntry, type Item, type DeliverySlot } from '../db/db';
 import { CategoryBadge } from './CategoryBadge';
+import { useMcrLots, getMcrLots } from '../pages/McrView';
+
+// ── MCR API helper // Utility for API calls inside EditOutwardModal
+const MCR_API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5001/api';
+
+async function authFetch(url: string, options?: RequestInit) {
+  const token = sessionStorage.getItem('token');
+  return fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...options?.headers
+    }
+  });
+}
+
+async function mcrEditSave(section: string, rowId: string, data: Record<string, string>) {
+  try {
+    const res = await authFetch(`${MCR_API_BASE}/mcr/${section}/edits`);
+    const allEdits = await res.json();
+    const existingEdits = allEdits[rowId] || {};
+    const mergedData = { ...existingEdits, ...data };
+
+    await authFetch(`${MCR_API_BASE}/mcr/${section}/edits`, {
+      method: 'POST',
+      body: JSON.stringify({ rowId, data: mergedData }),
+    });
+  } catch (e) {
+    console.warn('[MCR Sync] Failed to update MCR:', e);
+  }
+}
+
+async function mcrExtraUpdate(section: string, rowId: string, data: Record<string, string>) {
+  try {
+    const res = await authFetch(`${MCR_API_BASE}/mcr/${section}/extras`);
+    const allExtras = await res.json();
+    const existingExtra = allExtras.find((r: any) => r.id === rowId || r.rowId === rowId);
+    
+    if (existingExtra) {
+      const mergedData = { ...existingExtra, ...data };
+      delete mergedData._isNew;
+
+      await authFetch(`${MCR_API_BASE}/mcr/${section}/extras`, {
+        method: 'POST',
+        body: JSON.stringify({ rowId, data: mergedData }),
+      });
+    }
+  } catch (e) {
+    console.warn('[MCR Sync] Failed to update MCR extra:', e);
+  }
+}
+
+function isoToMcrDate(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
 
 const today = new Date().toISOString().split('T')[0];
 
@@ -43,6 +101,61 @@ export function EditOutwardModal({
   const [deliveries, setDeliveries] = useState<DeliverySlot[]>(initDeliveries(entry));
 
   const [isSaving, setIsSaving] = useState(false);
+
+  // ── MCR Reference Search ───────────────────────────────────────────────
+  const [mcrSearchQuery, setMcrSearchQuery] = useState('');
+  const [showMcrPanel, setShowMcrPanel] = useState(false);
+  const [selectedMcrLot, setSelectedMcrLot] = useState<ReturnType<typeof getMcrLots>[0] | null>(null);
+
+  const { lots: allMcrLots, loading: mcrLotsLoading } = useMcrLots();
+
+  const mcrSuggestions = useMemo(() => {
+    const q = mcrSearchQuery.trim().toLowerCase();
+    if (!q || q.length < 2) {
+      return allMcrLots.filter(l => l.status === 'pending').slice(0, 8);
+    }
+    const matched = allMcrLots.filter(l =>
+      (l.lotNo || '').toLowerCase().includes(q) ||
+      (l.material || '').toLowerCase().includes(q) ||
+      (l.purchaser || '').toLowerCase().includes(q) ||
+      (l.scrNo || '').toLowerCase().includes(q)
+    );
+    const pending = matched.filter(l => l.status === 'pending');
+    const rest = matched.filter(l => l.status !== 'pending');
+    return [...pending, ...rest].slice(0, 12);
+  }, [mcrSearchQuery, allMcrLots]);
+
+  const handleMcrLotSelect = (lot: ReturnType<typeof getMcrLots>[0]) => {
+    setSelectedMcrLot(lot);
+    setShowMcrPanel(false);
+
+    if (lot.lotNo) setLotNumber(lot.lotNo);
+    if (lot.purchaser) setFirmName(lot.purchaser);
+
+    if (lot.eAuctionDate && lot.eAuctionDate.toLowerCase() !== 'cancelled') {
+      const firstDate = lot.eAuctionDate.split(/[&,\s]/)[0].trim();
+      const parts = firstDate.split('/');
+      if (parts.length === 3 && parts[2].length === 4) {
+        const iso = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        if (!isNaN(Date.parse(iso))) setDateSold(iso);
+      }
+    }
+
+    if (lot.condnDate && typeof lot.condnDate === 'string' && lot.condnDate.toLowerCase() !== 'cancelled') {
+      const firstDate = lot.condnDate.split(/[&,\s]/)[0].trim();
+      const normalized = firstDate.replace(/\./g, '/');
+      const parts = normalized.split('/');
+      if (parts.length === 3 && parts[2].length === 4) {
+        const iso = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        if (!isNaN(Date.parse(iso))) setDateLotApplied(iso);
+      }
+    }
+  };
+
+  const clearMcrSelection = () => {
+    setSelectedMcrLot(null);
+    setMcrSearchQuery('');
+  };
 
   const selectedUnitName = useMemo(() => {
     if (!units) return '';
@@ -116,6 +229,32 @@ export function EditOutwardModal({
         rcCount: rcCount ? Number(rcCount) : undefined,
         fcCount: fcCount ? Number(fcCount) : undefined,
       });
+
+      // ── MCR Bidirectional Sync ─────────────────────────────────────────────
+      if (selectedMcrLot) {
+        const mcrUpdates: Record<string, string> = {};
+        
+        // MCR Delivery Date: push ALL dates comma separated
+        const mcrDatesStr = deliveries.filter(d => d.date).map(d => isoToMcrDate(d.date)).join(', ');
+        if (!selectedMcrLot.deliveryDate && mcrDatesStr)
+          mcrUpdates.deliveryDate = mcrDatesStr;
+          
+        if (!selectedMcrLot.purchaser && firmName)
+          mcrUpdates.purchaser = firmName;
+        if (!selectedMcrLot.lotNo && lotNumber)
+          mcrUpdates.lotNo = lotNumber;
+        if (!selectedMcrLot.eAuctionDate && dateSold)
+          mcrUpdates.eAuctionDate = isoToMcrDate(dateSold);
+        
+        if (Object.keys(mcrUpdates).length > 0) {
+          if (selectedMcrLot.id.startsWith('new_')) {
+            await mcrExtraUpdate(selectedMcrLot.section || 'lot', selectedMcrLot.id, mcrUpdates);
+          } else {
+            await mcrEditSave(selectedMcrLot.section || 'lot', selectedMcrLot.id, mcrUpdates);
+          }
+        }
+      }
+
       onClose();
     } catch (err) {
       console.error(err);
@@ -172,6 +311,104 @@ export function EditOutwardModal({
         
         <div className="p-6 overflow-y-auto">
           <form id="edit-outward-form" onSubmit={handleSave} className="space-y-6">
+
+            {/* ── MCR Reference Search Panel ──────────────────────────────── */}
+            <div className="mb-6 rounded-xl border border-indigo-200 overflow-hidden">
+              <div
+                className={`px-4 py-3 flex items-center gap-3 cursor-pointer transition-colors ${
+                  showMcrPanel ? 'bg-indigo-600' : 'bg-indigo-50 hover:bg-indigo-100'
+                }`}
+                onClick={() => setShowMcrPanel(p => !p)}
+              >
+                <span className={`material-symbols-outlined text-[20px] ${showMcrPanel ? 'text-white' : 'text-indigo-600'}`}
+                  style={{ fontVariationSettings: "'FILL' 1" }}>inventory_2</span>
+                <div className="flex-1">
+                  <p className={`text-sm font-bold ${showMcrPanel ? 'text-white' : 'text-indigo-700'}`}>
+                    🔍 MCR Lot se Search &amp; Auto-fill
+                  </p>
+                </div>
+                {selectedMcrLot && !showMcrPanel && (
+                  <div className="flex items-center gap-2 bg-white border border-emerald-300 rounded-lg px-2.5 py-1.5">
+                    <span className="material-symbols-outlined text-emerald-600 text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                    <div>
+                      <p className="text-[10px] font-bold text-emerald-700">{selectedMcrLot.lotNo || selectedMcrLot.material.slice(0, 20)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); clearMcrSelection(); }}
+                      className="ml-1 text-outline hover:text-error transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                  </div>
+                )}
+                <span className={`material-symbols-outlined text-[20px] transition-transform duration-200 ${showMcrPanel ? 'text-white rotate-180' : 'text-indigo-400'}`}>expand_more</span>
+              </div>
+
+              {showMcrPanel && (
+                <div className="bg-white">
+                  <div className="p-3 border-b border-indigo-100">
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-indigo-400 text-[18px]">search</span>
+                      <input
+                        type="text"
+                        className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-indigo-200 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
+                        placeholder="Material name, Lot No, Purchaser ya SCR No type karo..."
+                        value={mcrSearchQuery}
+                        onChange={e => setMcrSearchQuery(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                    {!mcrSearchQuery && (
+                      <p className="text-[10px] text-indigo-400 mt-1.5 ml-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[12px]">info</span>
+                        {mcrLotsLoading ? '⏳ Loading latest cloud data...' : '⏳ Pending lots automatically dikh rahe hain'}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="max-h-64 overflow-y-auto">
+                    {mcrSuggestions.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-outline text-sm">Koi lot nahi mila</div>
+                    ) : (
+                      mcrSuggestions.map(lot => {
+                        const isPending = lot.status === 'pending';
+                        const isSelected = selectedMcrLot?.id === lot.id;
+                        return (
+                          <div
+                            key={lot.id}
+                            onClick={() => handleMcrLotSelect(lot)}
+                            className={`px-4 py-3 cursor-pointer border-b border-indigo-50 last:border-0 transition-all ${
+                              isSelected
+                                ? 'bg-emerald-50 border-l-4 border-l-emerald-500'
+                                : isPending
+                                  ? 'hover:bg-amber-50 bg-amber-50/40'
+                                  : 'hover:bg-indigo-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-bold text-[11px] text-on-surface tracking-wide">
+                                {lot.lotNo || <span className="text-outline italic font-normal">No Lot No</span>}
+                              </span>
+                              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${isPending ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>
+                                {isPending ? '⏳ Pending' : '✅ Delivered'}
+                              </span>
+                              {isSelected && <span className="material-symbols-outlined text-emerald-600 text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>}
+                            </div>
+                            <p className="text-xs text-on-surface font-medium mt-0.5 truncate">{lot.material}</p>
+                            <div className="flex items-center gap-3 mt-1 text-[10px] text-outline flex-wrap">
+                              <span className="font-data-mono font-bold text-primary">{lot.qty} {lot.unit}</span>
+                              {lot.purchaser && <span>🏢 {lot.purchaser}</span>}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
               
               <div className="space-y-2 col-span-1 md:col-span-2">
