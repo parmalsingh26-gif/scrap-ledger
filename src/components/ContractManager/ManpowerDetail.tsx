@@ -36,6 +36,7 @@ export function ManpowerDetail({ contract, update, notify }: any) {
   const [hoveredCell, setHoveredCell] = useState<{ workerId: string; day: number } | null>(null);
   const [selectedWorkers, setSelectedWorkers] = useState<Set<string>>(new Set());
   const [showImportModal, setShowImportModal] = useState(false);
+  const [printBlankTotals, setPrintBlankTotals] = useState(true);
 
   if (!month) {
     return (
@@ -377,6 +378,10 @@ export function ManpowerDetail({ contract, update, notify }: any) {
               placeholder="+ worker name"
               className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-40 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
             <button onClick={addWorker} className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 flex items-center gap-1"><UserPlus size={12}/> Add</button>
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-100">
+              <input type="checkbox" checked={printBlankTotals} onChange={(e) => setPrintBlankTotals(e.target.checked)} className="rounded text-indigo-600 focus:ring-indigo-500" />
+              Blank 0s in Print
+            </label>
             <button onClick={() => window.print()} className="text-xs px-2 py-1 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 flex items-center gap-1">
               <Printer size={12} /> Print
             </button>
@@ -565,7 +570,7 @@ export function ManpowerDetail({ contract, update, notify }: any) {
       
       {/* Hidden print template */}
       <div className="hidden print:block">
-        <PrintTemplate contract={contract} month={month} />
+        <PrintTemplate contract={contract} month={month} printBlankTotals={printBlankTotals} />
       </div>
     </div>
   );

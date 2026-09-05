@@ -1,6 +1,6 @@
 import React from "react";
 
-export function PrintTemplate({ contract, month, used, remaining }: any) {
+export function PrintTemplate({ contract, month, used, remaining, printBlankTotals = true }: any) {
   if (!contract || !month) return null;
 
   const isManpower = contract.type === "manpower";
@@ -41,6 +41,9 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
     const totalPresent = (month.workers || []).reduce(
       (s: number, w: any) => s + Object.values(w.attendance || {}).filter((v: any) => (v || "").toUpperCase() === "P").length, 0
     );
+    const totalAbsent = (month.workers || []).reduce(
+      (s: number, w: any) => s + Object.values(w.attendance || {}).filter((v: any) => (v || "").toUpperCase() === "A").length, 0
+    );
 
     return (
       <div className="hidden print:block w-full text-black bg-white" style={{ fontFamily: 'sans-serif' }}>
@@ -69,8 +72,8 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
                 <th className="border border-black p-1 w-16">Relay or Set<br/>Work</th>
                 <th className="border border-black p-1 w-24">Place of<br/>work</th>
                 <th className="border border-black p-1" colSpan={32}>Date</th>
-                <th className="border border-black p-1 w-12" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Summary of Days<br/>No. of Days</th>
-                <th className="border border-black p-1 w-12" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Remarks No.<br/>of hours</th>
+                <th className="border border-black p-1 w-12" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Summary of Days<br/>No. of P</th>
+                <th className="border border-black p-1 w-12" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Summary of Days<br/>No. of A</th>
                 <th className="border border-black p-1 w-16" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>**Signature<br/>of Register<br/>keeper</th>
               </tr>
               <tr className="font-bold text-[9px] bg-white">
@@ -93,6 +96,9 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
             <tbody>
               {month.workers?.map((w: any, idx: number) => {
                 const presentCount = Object.values(w.attendance || {}).filter(a => a === "P").length;
+                const absentCount = Object.values(w.attendance || {}).filter(a => a === "A").length;
+                const showP = printBlankTotals && presentCount === 0 ? "" : presentCount;
+                const showA = printBlankTotals && absentCount === 0 ? "" : absentCount;
                 return (
                   <React.Fragment key={w.id}>
                     <tr>
@@ -121,8 +127,8 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
                         const isSpecial = val === "S" || val === "H";
                         return <td key={`in-${i}`} className={`border border-black p-0.5 text-center text-[9px] font-bold ${isSpecial ? 'italic text-gray-600' : ''}`}>{val}</td>;
                       })}
-                      <td className="border border-black p-1 font-bold text-center" rowSpan={2}>{presentCount}</td>
-                      <td className="border border-black p-1 text-center" rowSpan={2}></td>
+                      <td className="border border-black p-1 font-bold text-center" rowSpan={2}>{showP}</td>
+                      <td className="border border-black p-1 font-bold text-center text-rose-600" rowSpan={2}>{showA}</td>
                       <td className="border border-black p-1 text-center" rowSpan={2}></td>
                     </tr>
                     <tr>
@@ -150,14 +156,16 @@ export function PrintTemplate({ contract, month, used, remaining }: any) {
                 {Array.from({ length: 31 }, (_, i) => {
                   const d = i + 1;
                   const isOff = month.sundays?.includes(d) || month.holidays?.includes(d);
+                  const pVal = perDay[d] || 0;
+                  const showPVal = printBlankTotals && pVal === 0 ? "" : pVal;
                   return (
                     <td key={d} className={`border border-black p-0.5 text-center font-bold ${isOff ? 'bg-gray-100 text-gray-400' : 'text-black'}`}>
-                      {isOff ? "" : (perDay[d] || "")}
+                      {isOff ? "" : showPVal}
                     </td>
                   );
                 })}
-                <td className="border border-black p-1 font-bold text-center">{totalPresent}</td>
-                <td className="border border-black p-1"></td>
+                <td className="border border-black p-1 font-bold text-center">{printBlankTotals && totalPresent === 0 ? "" : totalPresent}</td>
+                <td className="border border-black p-1 font-bold text-center text-rose-600">{printBlankTotals && totalAbsent === 0 ? "" : totalAbsent}</td>
                 <td className="border border-black p-1"></td>
               </tr>
             </tbody>
