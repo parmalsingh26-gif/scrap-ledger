@@ -64,9 +64,9 @@ export function PrintTemplate({ contract, month, used, remaining, printBlankTota
             <div>For the Period from {month.monthIdx !== undefined ? `01/${(month.monthIdx + 1).toString().padStart(2, '0')}/${month.year}` : month.label} to {month.monthIdx !== undefined ? `${month.totalDays}/${(month.monthIdx + 1).toString().padStart(2, '0')}/${month.year}` : month.label}</div>
           </div>
 
-          <table className="w-full border-collapse border border-black text-[10px] text-center">
+          <table className="w-full border-collapse border border-black text-[10px] text-center" style={{ WebkitPrintColorAdjust: 'exact', colorAdjust: 'exact' }}>
             <thead>
-              <tr className="font-bold text-[9px] bg-white">
+              <tr className="font-bold text-[9px] bg-indigo-50 text-indigo-900">
                 <th className="border border-black p-1 w-8">Sr.No. in<br/>Employee<br/>Register</th>
                 <th className="border border-black p-1 w-32">Name</th>
                 <th className="border border-black p-1 w-16">Relay or Set<br/>Work</th>
@@ -76,7 +76,7 @@ export function PrintTemplate({ contract, month, used, remaining, printBlankTota
                 <th className="border border-black p-1 w-12" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Summary of Days<br/>No. of A</th>
                 <th className="border border-black p-1 w-16" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>**Signature<br/>of Register<br/>keeper</th>
               </tr>
-              <tr className="font-bold text-[9px] bg-white">
+              <tr className="font-bold text-[9px] bg-indigo-50 text-indigo-900">
                 <th className="border border-black p-0.5" rowSpan={2}>1</th>
                 <th className="border border-black p-0.5" rowSpan={2}>2</th>
                 <th className="border border-black p-0.5" rowSpan={2}>3</th>
@@ -86,7 +86,7 @@ export function PrintTemplate({ contract, month, used, remaining, printBlankTota
                 <th className="border border-black p-0.5" rowSpan={2}>7</th>
                 <th className="border border-black p-0.5" rowSpan={2}>8</th>
               </tr>
-              <tr className="font-bold text-[9px] bg-white">
+              <tr className="font-bold text-[9px] bg-indigo-50 text-indigo-900">
                 <th className="border border-black p-0.5 w-6"></th>
                 {Array.from({ length: 31 }, (_, i) => (
                   <th key={i} className="border border-black p-0.5 w-4">{i + 1}</th>
@@ -102,11 +102,11 @@ export function PrintTemplate({ contract, month, used, remaining, printBlankTota
                 return (
                   <React.Fragment key={w.id}>
                     <tr>
-                      <td className="border border-black p-1 font-bold text-center" rowSpan={2}>{idx + 1}</td>
-                      <td className="border border-black p-1 font-bold text-left px-2" rowSpan={2}>{w.name}</td>
+                      <td className="border border-black p-1 font-bold text-center text-indigo-900" rowSpan={2}>{idx + 1}</td>
+                      <td className="border border-black p-1 font-extrabold text-left px-2 text-indigo-800" rowSpan={2}>{w.name}</td>
                       <td className="border border-black p-1 text-center" rowSpan={2}></td>
-                      <td className="border border-black p-1 text-center" rowSpan={2}>{w.section || contract.name}</td>
-                      <td className="border border-black p-0.5 font-bold text-center text-[8px]">IN</td>
+                      <td className="border border-black p-1 text-center font-semibold text-gray-700" rowSpan={2}>{w.section || contract.name}</td>
+                      <td className="border border-black p-0.5 font-bold text-center text-[8px] text-gray-500">IN</td>
                       {Array.from({ length: 31 }, (_, i) => {
                         const d = i + 1;
                         const isOff = month.sundays?.includes(d) || month.holidays?.includes(d);
@@ -115,7 +115,7 @@ export function PrintTemplate({ contract, month, used, remaining, printBlankTota
                           const text = month.sundays?.includes(d) ? "SUNDAY   " : "HOLIDAY   ";
                           const letter = text[idx % text.length];
                           return (
-                            <td key={`in-${i}`} className="border border-black p-1 text-center text-[10px] font-bold text-gray-600 bg-gray-100">
+                            <td key={`in-${i}`} className="border border-black p-1 text-center text-[11px] font-extrabold text-red-600 bg-red-50">
                               {letter}
                             </td>
                           );
@@ -125,18 +125,20 @@ export function PrintTemplate({ contract, month, used, remaining, printBlankTota
                         if (val === "SUNDAY") val = "S";
                         if (val === "HOLIDAY") val = "H";
                         const isSpecial = val === "S" || val === "H";
-                        return <td key={`in-${i}`} className={`border border-black p-0.5 text-center text-[9px] font-bold ${isSpecial ? 'italic text-gray-600' : ''}`}>{val}</td>;
+                        const isAbsent = val === "A";
+                        const isPresent = val === "P";
+                        return <td key={`in-${i}`} className={`border border-black p-0.5 text-center text-[10px] font-bold ${isSpecial ? 'text-red-600 font-extrabold bg-red-50' : isAbsent ? 'text-rose-600' : isPresent ? 'text-emerald-700' : ''}`}>{val}</td>;
                       })}
-                      <td className="border border-black p-1 font-bold text-center" rowSpan={2}>{showP}</td>
+                      <td className="border border-black p-1 font-bold text-center text-emerald-700" rowSpan={2}>{showP}</td>
                       <td className="border border-black p-1 font-bold text-center text-rose-600" rowSpan={2}>{showA}</td>
                       <td className="border border-black p-1 text-center" rowSpan={2}></td>
                     </tr>
                     <tr>
-                      <td className="border border-black p-0.5 font-bold text-center text-[8px]">OUT</td>
+                      <td className="border border-black p-0.5 font-bold text-center text-[8px] text-gray-500">OUT</td>
                       {Array.from({ length: 31 }, (_, i) => {
                         const d = i + 1;
                         const isOff = month.sundays?.includes(d) || month.holidays?.includes(d);
-                        if (isOff) return <td key={`out-${i}`} className="border border-black p-0.5 text-center text-[9px] bg-gray-100"></td>;
+                        if (isOff) return <td key={`out-${i}`} className="border border-black p-0.5 text-center text-[9px] bg-red-50"></td>;
                         return <td key={`out-${i}`} className="border border-black p-0.5 text-center text-[9px]"></td>;
                       })}
                     </tr>
@@ -150,8 +152,8 @@ export function PrintTemplate({ contract, month, used, remaining, printBlankTota
               )}
 
               {/* ── TOTAL / day row ── shows per-day present count in each date box */}
-              <tr className="font-bold bg-gray-50 text-[9px]">
-                <td className="border border-black p-1 text-center font-bold" colSpan={4} style={{ fontSize: '8px' }}>TOTAL / day</td>
+              <tr className="font-bold bg-indigo-50 text-indigo-900 text-[9px]">
+                <td className="border border-black p-1 text-center font-bold" colSpan={4} style={{ fontSize: '9px' }}>TOTAL / day</td>
                 <td className="border border-black p-0.5"></td>
                 {Array.from({ length: 31 }, (_, i) => {
                   const d = i + 1;
@@ -159,12 +161,12 @@ export function PrintTemplate({ contract, month, used, remaining, printBlankTota
                   const pVal = perDay[d] || 0;
                   const showPVal = printBlankTotals && pVal === 0 ? "" : pVal;
                   return (
-                    <td key={d} className={`border border-black p-0.5 text-center font-bold ${isOff ? 'bg-gray-100 text-gray-400' : 'text-black'}`}>
+                    <td key={d} className={`border border-black p-0.5 text-center font-bold ${isOff ? 'bg-red-50 text-red-600 font-extrabold' : 'text-indigo-800'}`}>
                       {isOff ? "" : showPVal}
                     </td>
                   );
                 })}
-                <td className="border border-black p-1 font-bold text-center">{printBlankTotals && totalPresent === 0 ? "" : totalPresent}</td>
+                <td className="border border-black p-1 font-bold text-center text-emerald-700">{printBlankTotals && totalPresent === 0 ? "" : totalPresent}</td>
                 <td className="border border-black p-1 font-bold text-center text-rose-600">{printBlankTotals && totalAbsent === 0 ? "" : totalAbsent}</td>
                 <td className="border border-black p-1"></td>
               </tr>
