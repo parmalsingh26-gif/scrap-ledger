@@ -224,7 +224,13 @@ export function ManpowerDetail({ contract, update, notify }: any) {
   const removeWorker = (workerId: string) => {
     update((c: any) => ({
       ...c,
-      months: c.months.map((m: any, i: number) => i !== idx ? m : { ...m, workers: m.workers.filter((w: any) => w.id !== workerId) }),
+      months: c.months.map((m: any, i: number) => {
+        if (i !== idx) return m;
+        const newWorkers = m.workers
+          .filter((w: any) => w.id !== workerId)
+          .map((w: any, index: number) => ({ ...w, srNo: index + 1 }));
+        return { ...m, workers: newWorkers };
+      }),
     }));
     setSelectedWorkers(prev => { const next = new Set(prev); next.delete(workerId); return next; });
   };
@@ -289,7 +295,9 @@ export function ManpowerDetail({ contract, update, notify }: any) {
             merged.push({ ...iw, srNo: merged.length + 1 });
           }
         });
-        return { ...m, workers: merged };
+        // Re-index all to ensure strict sequential ordering
+        const reIndexed = merged.map((w: any, index: number) => ({ ...w, srNo: index + 1 }));
+        return { ...m, workers: reIndexed };
       }),
     }));
     notify(`${workers.length} workers import/merge ho gaye`);
